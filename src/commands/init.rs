@@ -7,7 +7,7 @@ use crate::{
     state::{MergesState, Strategy},
 };
 
-pub fn run(base_branch: Option<String>) -> Result<()> {
+pub fn run(base_branch: Option<String>, use_worktrees: bool) -> Result<()> {
     let root = git::repo_root()?;
     let state_path = crate::state::MergesState::path(&root);
 
@@ -39,7 +39,8 @@ pub fn run(base_branch: Option<String>) -> Result<()> {
         source_branch: source_branch.clone(),
         repo_owner: owner.clone(),
         repo_name: repo.clone(),
-        strategy: Strategy::Stacked, // default; overridden by `push --independent`
+        strategy: Strategy::Stacked,
+        use_worktrees,
         chunks: vec![],
     };
 
@@ -48,12 +49,13 @@ pub fn run(base_branch: Option<String>) -> Result<()> {
     git::enable_rerere(&root)?;
 
     println!(
-        "{} Initialised merges for {}/{} — source: {}, base: {}",
+        "{} Initialised merges for {}/{} — source: {}, base: {}{}",
         "✓".green().bold(),
         owner.cyan(),
         repo.cyan(),
         source_branch.yellow(),
-        base.yellow()
+        base.yellow(),
+        if use_worktrees { " (worktrees enabled)" } else { "" }
     );
     println!("  {} rerere enabled — conflict resolutions will be replayed automatically.", "·".dimmed());
     println!(

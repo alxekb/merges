@@ -38,6 +38,8 @@ pub struct MergesState {
     pub repo_owner: String,
     pub repo_name: String,
     pub strategy: Strategy,
+    #[serde(default)]
+    pub use_worktrees: bool,
     pub chunks: Vec<Chunk>,
 }
 
@@ -73,6 +75,7 @@ mod tests {
             repo_owner: "acme".to_string(),
             repo_name: "myrepo".to_string(),
             strategy: Strategy::Stacked,
+            use_worktrees: false,
             chunks: vec![],
         }
     }

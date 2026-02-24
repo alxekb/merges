@@ -147,7 +147,7 @@ async fn dispatch_tool(name: &str, args: &Value) -> Result<String> {
     match name {
         "merges_init" => {
             let base = args.get("base_branch").and_then(|v| v.as_str()).map(String::from);
-            commands::init::run(base)?;
+            commands::init::run(base, false)?;
             Ok("Initialised successfully.".to_string())
         }
 

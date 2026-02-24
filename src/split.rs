@@ -145,6 +145,7 @@ pub fn apply_plan(root: &std::path::Path, plan: Vec<ChunkPlan>) -> Result<()> {
     }
 
     let base_sha = git::merge_base(root, &base_branch)?;
+    let use_worktrees = state.use_worktrees;
 
     // Track branches we create so we can roll them back on failure.
     let mut created_branches: Vec<String> = Vec::new();
@@ -156,10 +157,16 @@ pub fn apply_plan(root: &std::path::Path, plan: Vec<ChunkPlan>) -> Result<()> {
             let safe_name = chunk_plan.name.to_lowercase().replace(' ', "-");
             let branch = format!("{}-chunk-{}-{}", source_branch, n, safe_name);
 
-            git::create_branch(root, &branch, &base_sha)?;
+            let work_dir: std::path::PathBuf = if use_worktrees {
+                git::add_worktree(root, &branch, &base_sha)?;
+                git::worktree_path(root, &branch)
+            } else {
+                git::create_branch(root, &branch, &base_sha)?;
+                root.to_path_buf()
+            };
             created_branches.push(branch.clone());
 
-            git::checkout_files_from(root, &source_branch, &chunk_plan.files)?;
+            git::checkout_files_from(&work_dir, &source_branch, &chunk_plan.files)?;
 
             let msg = format!(
                 "feat({}): chunk {} - {}\n\nFiles:\n{}",
@@ -168,8 +175,12 @@ pub fn apply_plan(root: &std::path::Path, plan: Vec<ChunkPlan>) -> Result<()> {
                 chunk_plan.name,
                 chunk_plan.files.join("\n")
             );
-            git::commit_all(root, &msg)?;
-            git::checkout(root, &source_branch)?;
+            git::commit_all(&work_dir, &msg)?;
+
+            // Classic mode: return to source branch after each chunk
+            if !use_worktrees {
+                git::checkout(root, &source_branch)?;
+            }
 
             new_chunks.push(Chunk {
                 name: chunk_plan.name.clone(),
@@ -189,9 +200,14 @@ pub fn apply_plan(root: &std::path::Path, plan: Vec<ChunkPlan>) -> Result<()> {
             Ok(())
         }
         Err(e) => {
-            // Rollback: make sure we're on the source branch, then delete any branches we created.
-            let _ = git::checkout(root, &source_branch);
+            // Rollback: clean up any branches/worktrees we created.
+            if !use_worktrees {
+                let _ = git::checkout(root, &source_branch);
+            }
             for branch in &created_branches {
+                if use_worktrees {
+                    let _ = git::remove_worktree(root, branch);
+                }
                 let _ = git::delete_branch(root, branch);
             }
             Err(e)

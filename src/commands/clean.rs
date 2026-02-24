@@ -95,6 +95,10 @@ pub async fn run(merged_only: bool, yes: bool) -> Result<()> {
 
         match git::delete_branch(&root, branch) {
             Ok(_) => {
+                // Also remove worktree if worktrees mode is enabled
+                if state.use_worktrees {
+                    let _ = git::remove_worktree(&root, branch);
+                }
                 println!("{} Deleted local branch '{}'", "✓".green(), branch.cyan());
                 removed_branches.push(branch.clone());
             }

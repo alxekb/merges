@@ -235,6 +235,67 @@ pub fn delete_branch(root: &Path, branch_name: &str) -> Result<()> {
     Ok(())
 }
 
+// ── Worktree helpers ──────────────────────────────────────────────────────────
+
+/// Return the path where a worktree for `branch_name` will be created.
+/// Located at `.git/merges-worktrees/<sanitised-branch>` — inside `.git/`
+/// so it is never tracked or shown in `git status`.
+pub fn worktree_path(root: &Path, branch_name: &str) -> PathBuf {
+    let safe = branch_name.replace('/', "-");
+    root.join(".git").join("merges-worktrees").join(safe)
+}
+
+/// Create a new branch `branch_name` at `base_ref` and add a worktree for it.
+/// The main worktree (and current branch) is untouched.
+pub fn add_worktree(root: &Path, branch_name: &str, base_ref: &str) -> Result<()> {
+    let wt_path = worktree_path(root, branch_name);
+    std::fs::create_dir_all(wt_path.parent().unwrap())?;
+
+    let status = Command::new("git")
+        .args([
+            "-C",
+            root.to_str().unwrap(),
+            "worktree",
+            "add",
+            "-b",
+            branch_name,
+            wt_path.to_str().unwrap(),
+            base_ref,
+        ])
+        .status()
+        .context("git worktree add failed")?;
+
+    if !status.success() {
+        bail!("Failed to create worktree for branch '{}'", branch_name);
+    }
+    Ok(())
+}
+
+/// Remove the worktree for `branch_name` and delete the directory.
+pub fn remove_worktree(root: &Path, branch_name: &str) -> Result<()> {
+    let wt_path = worktree_path(root, branch_name);
+    if !wt_path.exists() {
+        return Ok(());
+    }
+
+    let status = Command::new("git")
+        .args([
+            "-C",
+            root.to_str().unwrap(),
+            "worktree",
+            "remove",
+            "--force",
+            wt_path.to_str().unwrap(),
+        ])
+        .status()
+        .context("git worktree remove failed")?;
+
+    if !status.success() {
+        bail!("Failed to remove worktree for branch '{}'", branch_name);
+    }
+    Ok(())
+}
+
 /// Ensure `pattern` appears in `.git/info/exclude` (local gitignore, never committed).
 /// This keeps `.merges.json` from appearing in diffs or blocking branch checkouts,
 /// without polluting the project's `.gitignore`.

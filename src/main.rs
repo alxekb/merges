@@ -31,6 +31,11 @@ enum Commands {
         /// Base branch PRs will target (default: main)
         #[arg(short, long)]
         base: Option<String>,
+
+        /// Use git worktrees — each chunk gets its own directory so your
+        /// working tree never changes during push/sync operations
+        #[arg(long)]
+        worktrees: bool,
     },
 
     /// Assign changed files to named chunks and create branches.
@@ -114,7 +119,7 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Init { base } => commands::init::run(base)?,
+        Commands::Init { base, worktrees } => commands::init::run(base, worktrees)?,
         Commands::Split { plan, auto } => commands::split::run(plan, auto)?,
         Commands::Push { stacked, independent } => commands::push::run(stacked, independent).await?,
         Commands::Sync => commands::sync::run()?,
