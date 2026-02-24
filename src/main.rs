@@ -87,6 +87,20 @@ enum Commands {
         files: Vec<String>,
     },
 
+    /// Move a file from one chunk to another
+    Move {
+        /// File to move (relative path)
+        file: String,
+
+        /// Source chunk name
+        #[arg(long = "from")]
+        from: String,
+
+        /// Destination chunk name
+        #[arg(long = "to")]
+        to: String,
+    },
+
     /// Generate shell completion scripts
     Completions {
         /// Shell to generate completions for
@@ -110,6 +124,10 @@ async fn main() -> Result<()> {
         Commands::Add { chunk, files } => {
             let root = git::repo_root()?;
             commands::add::run(&root, &chunk, &files)?;
+        }
+        Commands::Move { file, from, to } => {
+            let root = git::repo_root()?;
+            commands::r#move::run(&root, &file, &from, &to)?;
         }
         Commands::Completions { shell } => {
             generate(shell, &mut Cli::command(), "merges", &mut std::io::stdout());
