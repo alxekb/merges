@@ -1,5 +1,6 @@
 mod commands;
 mod config;
+mod doctor;
 mod git;
 mod github;
 mod mcp;
@@ -106,6 +107,13 @@ enum Commands {
         to: String,
     },
 
+    /// Validate state consistency (branch existence, worktrees, gitignore)
+    Doctor {
+        /// Attempt to repair detected issues
+        #[arg(long)]
+        repair: bool,
+    },
+
     /// Generate shell completion scripts
     Completions {
         /// Shell to generate completions for
@@ -133,6 +141,21 @@ async fn main() -> Result<()> {
         Commands::Move { file, from, to } => {
             let root = git::repo_root()?;
             commands::r#move::run(&root, &file, &from, &to)?;
+        }
+        Commands::Doctor { repair } => {
+            let root = git::repo_root()?;
+            let report = doctor::run(&root, repair)?;
+            if report.all_ok() {
+                println!("✓ All checks passed — state is healthy.");
+            } else {
+                for issue in &report.issues {
+                    println!("✗ {}", issue);
+                }
+                if !repair {
+                    println!("\nRun `merges doctor --repair` to attempt automatic fixes.");
+                }
+                anyhow::bail!("{} issue(s) found", report.issues.len());
+            }
         }
         Commands::Completions { shell } => {
             generate(shell, &mut Cli::command(), "merges", &mut std::io::stdout());

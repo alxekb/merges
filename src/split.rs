@@ -129,6 +129,8 @@ pub fn apply_plan(root: &std::path::Path, plan: Vec<ChunkPlan>) -> Result<()> {
 
     // Validate ALL files upfront before touching any branches
     let changed = git::changed_files(root, &base_branch)?;
+
+    // 1. All files must be in the diff
     for chunk in &plan {
         for file in &chunk.files {
             if !changed.contains(file) {
@@ -139,6 +141,35 @@ pub fn apply_plan(root: &std::path::Path, plan: Vec<ChunkPlan>) -> Result<()> {
                     chunk.name,
                     base_branch,
                     changed
+                );
+            }
+        }
+    }
+
+    // 2. No file already assigned to an existing chunk
+    let already_assigned: Vec<&str> = state.chunks.iter()
+        .flat_map(|c| c.files.iter().map(|f| f.as_str()))
+        .collect();
+    for chunk in &plan {
+        for file in &chunk.files {
+            if already_assigned.contains(&file.as_str()) {
+                bail!(
+                    "File '{}' is already assigned to an existing chunk. \
+                     Use `merges move` to reassign it.",
+                    file
+                );
+            }
+        }
+    }
+
+    // 3. No file duplicated within the plan itself
+    let mut seen = std::collections::HashSet::new();
+    for chunk in &plan {
+        for file in &chunk.files {
+            if !seen.insert(file.as_str()) {
+                bail!(
+                    "File '{}' appears more than once across the chunk plan.",
+                    file
                 );
             }
         }

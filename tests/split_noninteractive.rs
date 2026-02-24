@@ -166,3 +166,64 @@ fn test_apply_plan_file_not_in_diff_returns_error() {
         msg
     );
 }
+
+// ── Duplicate file validation ─────────────────────────────────────────────────
+
+/// apply_plan should reject a plan where a file is already assigned to an existing chunk.
+#[test]
+fn test_apply_plan_rejects_file_already_in_existing_chunk() {
+    let (_dir, root) = make_repo_with_changes();
+    write_state(&root);
+
+    // First split: src/models/user.rs → first chunk
+    merges::split::apply_plan(&root, vec![
+        merges::split::ChunkPlan {
+            name: "first".to_string(),
+            files: vec!["src/models/user.rs".to_string()],
+        },
+    ]).unwrap();
+
+    // Second split: try to put src/models/user.rs into another chunk
+    let result = merges::split::apply_plan(&root, vec![
+        merges::split::ChunkPlan {
+            name: "second".to_string(),
+            files: vec!["src/models/user.rs".to_string()],
+        },
+    ]);
+
+    assert!(result.is_err(), "Should reject file already in an existing chunk");
+    let msg = result.unwrap_err().to_string();
+    assert!(msg.contains("src/models/user.rs"), "Error should name the already-assigned file: {}", msg);
+}
+
+/// apply_plan rejects a plan with a duplicate within a single chunk.
+#[test]
+fn test_apply_plan_rejects_duplicate_file_within_chunk() {
+    let (_dir, root) = make_repo_with_changes();
+    write_state(&root);
+
+    let result = merges::split::apply_plan(&root, vec![
+        merges::split::ChunkPlan {
+            name: "a".to_string(),
+            files: vec!["src/models/user.rs".to_string(), "src/models/user.rs".to_string()],
+        },
+    ]);
+
+    assert!(result.is_err(), "Should reject duplicate within a single chunk");
+}
+
+/// apply_plan should reject a plan where the same file appears in two chunks.
+#[test]
+fn test_apply_plan_rejects_duplicate_file_across_chunks() {
+    let (_dir, root) = make_repo_with_changes();
+    write_state(&root);
+
+    let result = merges::split::apply_plan(&root, vec![
+        merges::split::ChunkPlan { name: "a".to_string(), files: vec!["src/models/user.rs".to_string()] },
+        merges::split::ChunkPlan { name: "b".to_string(), files: vec!["src/models/user.rs".to_string()] },
+    ]);
+
+    assert!(result.is_err(), "Should reject duplicate file across chunks");
+    let msg = result.unwrap_err().to_string();
+    assert!(msg.contains("src/models/user.rs"), "Error should name the duplicate file: {}", msg);
+}
