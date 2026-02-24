@@ -5,13 +5,9 @@ use crate::{git, state::MergesState};
 
 /// Add `files` to the named chunk.
 ///
-/// Steps:
-/// 1. Validate files exist in the source-branch diff.
-/// 2. Checkout the chunk branch.
-/// 3. Checkout new files from the source branch.
-/// 4. Amend the chunk commit to include them.
-/// 5. Return to the source branch.
-/// 6. Update the state file.
+/// When `use_worktrees` is enabled, operations happen inside the chunk's
+/// worktree directory — the main working tree branch never changes.
+/// In classic mode, the chunk branch is checked out and then restored.
 pub fn run(root: &std::path::Path, chunk_name: &str, files: &[String]) -> Result<()> {
     let mut state = MergesState::load(root)?;
 
@@ -55,52 +51,59 @@ pub fn run(root: &std::path::Path, chunk_name: &str, files: &[String]) -> Result
     let source_branch = state.source_branch.clone();
     let chunk_branch = state.chunks[chunk_idx].branch.clone();
 
-    // Switch to chunk branch, add the new files, amend commit
-    git::checkout(root, &chunk_branch)?;
-
-    if !new_files.is_empty() {
-        git::checkout_files_from(root, &source_branch, &new_files)?;
-
-        // Amend the existing commit
-        let amend_status = std::process::Command::new("git")
-            .args(["-C", root.to_str().unwrap(), "add", "-A"])
-            .status()?;
-        if !amend_status.success() {
-            git::checkout(root, &source_branch)?;
-            bail!("git add failed");
-        }
-
-        let amend_status = std::process::Command::new("git")
-            .args([
-                "-C",
-                root.to_str().unwrap(),
-                "commit",
-                "--amend",
-                "--no-edit",
-            ])
-            .status()?;
-        if !amend_status.success() {
-            git::checkout(root, &source_branch)?;
-            bail!("git commit --amend failed");
-        }
-
-        println!(
-            "{} Added {} file(s) to chunk '{}'",
-            "✓".green().bold(),
-            new_files.len().to_string().yellow(),
-            chunk_name.cyan()
-        );
-    } else {
+    if new_files.is_empty() {
         println!(
             "{} All specified files are already in chunk '{}' — nothing to do.",
             "·".dimmed(),
             chunk_name.cyan()
         );
+        return Ok(());
     }
 
-    git::checkout(root, &source_branch)?;
+    // Determine the working directory for this chunk
+    let work_dir = if state.use_worktrees {
+        git::worktree_path(root, &chunk_branch)
+    } else {
+        // Classic mode: switch to chunk branch, amend, restore
+        git::checkout(root, &chunk_branch)?;
+        root.to_path_buf()
+    };
 
-    // Update state: add new files to chunk
+    let result = (|| -> Result<()> {
+        git::checkout_files_from(&work_dir, &source_branch, &new_files)?;
+
+        let amend_status = std::process::Command::new("git")
+            .args(["-C", work_dir.to_str().unwrap(), "add", "-A"])
+            .status()?;
+        if !amend_status.success() {
+            bail!("git add failed");
+        }
+
+        let amend_status = std::process::Command::new("git")
+            .args(["-C", work_dir.to_str().unwrap(), "commit", "--amend", "--no-edit"])
+            .status()?;
+        if !amend_status.success() {
+            bail!("git commit --amend failed");
+        }
+
+        Ok(())
+    })();
+
+    // Classic mode: always restore source branch
+    if !state.use_worktrees {
+        git::checkout(root, &source_branch)?;
+    }
+
+    result?;
+
+    println!(
+        "{} Added {} file(s) to chunk '{}'",
+        "✓".green().bold(),
+        new_files.len().to_string().yellow(),
+        chunk_name.cyan()
+    );
+
+    // Update state
     state.chunks[chunk_idx].files.extend(new_files);
     state.save(root)?;
 

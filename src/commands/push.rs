@@ -48,16 +48,22 @@ pub async fn run(stacked: bool, independent: bool) -> Result<()> {
         pb.set_message(format!("Processing chunk '{}'…", chunk.name));
 
         // Switch to chunk branch and sync with base
-        git::checkout(&root, &chunk.branch)?;
+        // In worktree mode, operate in the chunk's worktree dir — no branch checkout needed.
+        let work_dir = if state.use_worktrees {
+            git::worktree_path(&root, &chunk.branch)
+        } else {
+            git::checkout(&root, &chunk.branch)?;
+            root.clone()
+        };
         pb.set_message(format!("[{}] Rebasing onto '{}'…", chunk.name, state.base_branch));
         match strategy {
-            Strategy::Stacked => git::fetch_and_rebase_stacked(&root, &state.base_branch)?,
-            Strategy::Independent => git::fetch_and_rebase(&root, &state.base_branch)?,
+            Strategy::Stacked => git::fetch_and_rebase_stacked(&work_dir, &state.base_branch)?,
+            Strategy::Independent => git::fetch_and_rebase(&work_dir, &state.base_branch)?,
         }
 
         // Push
         pb.set_message(format!("[{}] Pushing…", chunk.name));
-        git::push_branch(&root, &chunk.branch)?;
+        git::push_branch(&work_dir, &chunk.branch)?;
 
         // Determine base for this PR
         let pr_base = match strategy {
@@ -124,8 +130,10 @@ pub async fn run(stacked: bool, independent: bool) -> Result<()> {
         }
     }
 
-    // Return to original branch
-    git::checkout(&root, &current_branch)?;
+    // In classic mode, return to the original branch
+    if !state.use_worktrees {
+        git::checkout(&root, &current_branch)?;
+    }
 
     println!("\n{} All chunks pushed successfully!", "✓".green().bold());
     println!("  Run {} to see PR status.", "merges status".bold());

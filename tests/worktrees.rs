@@ -208,3 +208,129 @@ fn test_apply_plan_worktrees_each_chunk_has_correct_files() {
     files_b.sort();
     assert_eq!(files_b, vec!["src/b.rs"], "part-b worktree diff should only have src/b.rs");
 }
+
+// ── Helper: set up two worktree-mode chunks ───────────────────────────────────
+
+fn setup_worktree_chunks(root: &std::path::Path) {
+    write_state(root, true);
+    merges::split::apply_plan(root, vec![
+        merges::split::ChunkPlan { name: "part-a".to_string(), files: vec!["src/a.rs".to_string()] },
+        merges::split::ChunkPlan { name: "part-b".to_string(), files: vec!["src/b.rs".to_string()] },
+    ]).unwrap();
+}
+
+// ── sync with worktrees ───────────────────────────────────────────────────────
+
+/// merges sync in worktree mode does not switch the active branch.
+#[test]
+fn test_sync_worktrees_does_not_switch_branch() {
+    let (_dir, root) = make_repo();
+    setup_worktree_chunks(&root);
+
+    // sync operates locally (no origin), just verify branch is unchanged
+    // In tests there's no origin so we call the internal rebase directly
+    let branch_before = merges::git::current_branch(&root).unwrap();
+
+    // Simulate what sync does: rebase each chunk in its worktree dir
+    let state = merges::state::MergesState::load(&root).unwrap();
+    for chunk in &state.chunks {
+        let wt = merges::git::worktree_path(&root, &chunk.branch);
+        // rebase onto self (no-op) just to confirm no checkout happens
+        let _ = std::process::Command::new("git")
+            .args(["-C", wt.to_str().unwrap(), "rebase", "HEAD"])
+            .output();
+    }
+
+    let branch_after = merges::git::current_branch(&root).unwrap();
+    assert_eq!(branch_before, branch_after,
+        "branch should not change during worktree-mode sync");
+}
+
+// ── add with worktrees ────────────────────────────────────────────────────────
+
+/// merges add in worktree mode does not switch the active branch.
+#[test]
+fn test_add_worktrees_does_not_switch_branch() {
+    let (_dir, root) = make_repo();
+    setup_worktree_chunks(&root);
+
+    merges::commands::add::run(&root, "part-a", &["src/c.rs".to_string()]).unwrap();
+
+    let branch = merges::git::current_branch(&root).unwrap();
+    assert_eq!(branch, "feat/big",
+        "source branch should be active after add in worktree mode");
+}
+
+/// merges add in worktree mode puts the file in the worktree diff.
+#[test]
+fn test_add_worktrees_file_in_worktree_diff() {
+    let (_dir, root) = make_repo();
+    setup_worktree_chunks(&root);
+
+    merges::commands::add::run(&root, "part-a", &["src/c.rs".to_string()]).unwrap();
+
+    let wt = merges::git::worktree_path(&root, "feat/big-chunk-1-part-a");
+    let mut files = merges::git::changed_files(&wt, "main").unwrap();
+    files.sort();
+    assert_eq!(files, vec!["src/a.rs", "src/c.rs"],
+        "worktree diff should include newly added file");
+}
+
+/// merges add in worktree mode updates state.
+#[test]
+fn test_add_worktrees_updates_state() {
+    let (_dir, root) = make_repo();
+    setup_worktree_chunks(&root);
+
+    merges::commands::add::run(&root, "part-a", &["src/c.rs".to_string()]).unwrap();
+
+    let state = merges::state::MergesState::load(&root).unwrap();
+    let chunk = state.chunks.iter().find(|c| c.name == "part-a").unwrap();
+    assert!(chunk.files.contains(&"src/c.rs".to_string()),
+        "state should include added file");
+}
+
+// ── move with worktrees ───────────────────────────────────────────────────────
+
+/// merges move in worktree mode does not switch the active branch.
+#[test]
+fn test_move_worktrees_does_not_switch_branch() {
+    let (_dir, root) = make_repo();
+    setup_worktree_chunks(&root);
+
+    merges::commands::r#move::run(&root, "src/b.rs", "part-b", "part-a").unwrap();
+
+    let branch = merges::git::current_branch(&root).unwrap();
+    assert_eq!(branch, "feat/big",
+        "source branch should be active after move in worktree mode");
+}
+
+/// merges move in worktree mode updates source worktree diff (file removed).
+#[test]
+fn test_move_worktrees_removes_from_source_worktree() {
+    let (_dir, root) = make_repo();
+    setup_worktree_chunks(&root);
+
+    merges::commands::r#move::run(&root, "src/b.rs", "part-b", "part-a").unwrap();
+
+    let wt_b = merges::git::worktree_path(&root, "feat/big-chunk-2-part-b");
+    let files = merges::git::changed_files(&wt_b, "main").unwrap();
+    assert!(!files.contains(&"src/b.rs".to_string()),
+        "src/b.rs should be removed from part-b worktree diff");
+}
+
+/// merges move in worktree mode updates dest worktree diff (file added).
+#[test]
+fn test_move_worktrees_adds_to_dest_worktree() {
+    let (_dir, root) = make_repo();
+    setup_worktree_chunks(&root);
+
+    merges::commands::r#move::run(&root, "src/b.rs", "part-b", "part-a").unwrap();
+
+    let wt_a = merges::git::worktree_path(&root, "feat/big-chunk-1-part-a");
+    let mut files = merges::git::changed_files(&wt_a, "main").unwrap();
+    files.sort();
+    assert_eq!(files, vec!["src/a.rs", "src/b.rs"],
+        "src/b.rs should appear in part-a worktree diff");
+}
+

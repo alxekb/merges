@@ -439,6 +439,37 @@ PRs #101 and #102 merged — clean up
 
 ---
 
+## Worktree mode
+
+By default `merges` switches branches with `git checkout` during `push` and `sync`. If you want your working tree to **never change** — keeping your editor stable and LSP running — enable worktrees at init time:
+
+```bash
+merges init --worktrees --base main
+```
+
+Each chunk gets its own directory inside `.git/merges-worktrees/`:
+
+```
+.git/merges-worktrees/
+  feat-payments-v2-chunk-1-db/       ← always on chunk-1-db branch
+  feat-payments-v2-chunk-2-models/   ← always on chunk-2-models branch
+  feat-payments-v2-chunk-3-api/      ← always on chunk-3-api branch
+```
+
+Your main directory stays on `feat/payments-v2` throughout the entire workflow. All commands — `split`, `push`, `sync`, `add`, `move` — operate inside the worktree directories instead of checking out branches.
+
+**Bonus: parallel sync.** Because worktrees are independent directories, `merges sync` rebases all chunks simultaneously:
+
+```
+→ Syncing 5 chunk branch(es) onto 'main' (parallel)
+[████████████████████████████████████████] 5/5 done   ← all 5 at once
+✓ All chunks are up to date with 'main'.
+```
+
+Worktree directories live inside `.git/` so they are never committed, never appear in `git status`, and are removed automatically by `merges clean`.
+
+---
+
 ## State file — `.merges.json`
 
 Written by `merges init`, excluded from git via `.git/info/exclude`. Commit it if you want to share chunk definitions with teammates.
