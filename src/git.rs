@@ -388,6 +388,37 @@ pub(crate) fn parse_github_owner_repo(url: &str) -> Result<(String, String)> {
     bail!("Cannot parse GitHub owner/repo from remote URL: {}", url)
 }
 
+/// Count how many commits `base_branch` has that `branch` does not.
+/// Uses `git rev-list --count <branch>..<base_branch>`.
+pub fn commits_behind(root: &Path, branch: &str, base_branch: &str) -> Result<u64> {
+    let range = format!("{}..{}", branch, base_branch);
+    let output = Command::new("git")
+        .args(["-C", root.to_str().unwrap(), "rev-list", "--count", &range])
+        .output()
+        .context("Failed to run git rev-list")?;
+
+    if !output.status.success() {
+        bail!(
+            "git rev-list failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+
+    let count_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    count_str
+        .parse::<u64>()
+        .context("Failed to parse rev-list count")
+}
+
+/// Format a "sync" label for the status table.
+pub fn sync_status(behind: u64) -> String {
+    if behind == 0 {
+        "✓ current".to_string()
+    } else {
+        format!("↓ {} behind", behind)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

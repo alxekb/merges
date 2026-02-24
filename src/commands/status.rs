@@ -33,6 +33,7 @@ pub async fn run() -> Result<()> {
             Cell::new("#").add_attribute(Attribute::Bold),
             Cell::new("Chunk").add_attribute(Attribute::Bold),
             Cell::new("Branch").add_attribute(Attribute::Bold),
+            Cell::new("Sync").add_attribute(Attribute::Bold),
             Cell::new("PR").add_attribute(Attribute::Bold),
             Cell::new("CI").add_attribute(Attribute::Bold),
             Cell::new("Review").add_attribute(Attribute::Bold),
@@ -55,6 +56,10 @@ pub async fn run() -> Result<()> {
             ("—".to_string(), "—".to_string())
         };
 
+        let behind = git::commits_behind(&root, &chunk.branch, &state.base_branch).unwrap_or(0);
+        let sync_label = git::sync_status(behind);
+        let sync_color = if behind == 0 { Color::Green } else { Color::Yellow };
+
         let ci_color = match ci_cell.as_str() {
             "success" => Color::Green,
             "failure" | "error" => Color::Red,
@@ -72,6 +77,7 @@ pub async fn run() -> Result<()> {
             Cell::new(i + 1),
             Cell::new(&chunk.name),
             Cell::new(&chunk.branch).fg(Color::Cyan),
+            Cell::new(&sync_label).fg(sync_color),
             Cell::new(&pr_cell),
             Cell::new(&ci_cell).fg(ci_color),
             Cell::new(&review_cell).fg(review_color),
