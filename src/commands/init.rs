@@ -45,6 +45,7 @@ pub fn run(base_branch: Option<String>) -> Result<()> {
 
     state.save(&root)?;
     git::ensure_gitignored(&root, ".merges.json")?;
+    git::enable_rerere(&root)?;
 
     println!(
         "{} Initialised merges for {}/{} — source: {}, base: {}",
@@ -54,6 +55,7 @@ pub fn run(base_branch: Option<String>) -> Result<()> {
         source_branch.yellow(),
         base.yellow()
     );
+    println!("  {} rerere enabled — conflict resolutions will be replayed automatically.", "·".dimmed());
     println!(
         "  Next: run {} to assign files to chunks.",
         "merges split".bold()

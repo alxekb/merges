@@ -2,7 +2,7 @@ use anyhow::Result;
 use colored::Colorize;
 use indicatif::{ProgressBar, ProgressStyle};
 
-use crate::{git, state::MergesState};
+use crate::{git, state::{MergesState, Strategy}};
 
 pub fn run() -> Result<()> {
     let root = git::repo_root()?;
@@ -32,7 +32,10 @@ pub fn run() -> Result<()> {
     for chunk in &state.chunks {
         pb.set_message(format!("rebasing '{}'…", chunk.branch));
         git::checkout(&root, &chunk.branch)?;
-        git::fetch_and_rebase(&root, &state.base_branch)?;
+        match state.strategy {
+            Strategy::Stacked => git::fetch_and_rebase_stacked(&root, &state.base_branch)?,
+            Strategy::Independent => git::fetch_and_rebase(&root, &state.base_branch)?,
+        }
         pb.inc(1);
     }
 

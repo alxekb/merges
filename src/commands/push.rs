@@ -50,7 +50,10 @@ pub async fn run(stacked: bool, independent: bool) -> Result<()> {
         // Switch to chunk branch and sync with base
         git::checkout(&root, &chunk.branch)?;
         pb.set_message(format!("[{}] Rebasing onto '{}'…", chunk.name, state.base_branch));
-        git::fetch_and_rebase(&root, &state.base_branch)?;
+        match strategy {
+            Strategy::Stacked => git::fetch_and_rebase_stacked(&root, &state.base_branch)?,
+            Strategy::Independent => git::fetch_and_rebase(&root, &state.base_branch)?,
+        }
 
         // Push
         pb.set_message(format!("[{}] Pushing…", chunk.name));

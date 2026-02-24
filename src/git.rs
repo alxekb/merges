@@ -156,26 +156,44 @@ pub fn commit_all(root: &Path, message: &str) -> Result<()> {
 
 /// Fetch latest origin and rebase current branch onto `base_branch`.
 pub fn fetch_and_rebase(root: &Path, base_branch: &str) -> Result<()> {
-    // Fetch
-    let fetch_status = Command::new("git")
+    fetch(root)?;
+    rebase(root, base_branch, false)
+}
+
+/// Like `fetch_and_rebase` but passes `--update-refs` so stacked chunk branches
+/// that point at commits in the rebased history are automatically updated.
+pub fn fetch_and_rebase_stacked(root: &Path, base_branch: &str) -> Result<()> {
+    fetch(root)?;
+    rebase(root, base_branch, true)
+}
+
+fn fetch(root: &Path) -> Result<()> {
+    let status = Command::new("git")
         .args(["-C", root.to_str().unwrap(), "fetch", "origin"])
         .status()
         .context("git fetch failed")?;
-    if !fetch_status.success() {
+    if !status.success() {
         bail!("git fetch origin failed");
     }
+    Ok(())
+}
 
-    // Rebase
-    let rebase_status = Command::new("git")
-        .args([
-            "-C",
-            root.to_str().unwrap(),
-            "rebase",
-            &format!("origin/{}", base_branch),
-        ])
+fn rebase(root: &Path, base_branch: &str, update_refs: bool) -> Result<()> {
+    let mut args = vec![
+        "-C".to_string(),
+        root.to_str().unwrap().to_string(),
+        "rebase".to_string(),
+    ];
+    if update_refs {
+        args.push("--update-refs".to_string());
+    }
+    args.push(format!("origin/{}", base_branch));
+
+    let status = Command::new("git")
+        .args(&args)
         .status()
         .context("git rebase failed")?;
-    if !rebase_status.success() {
+    if !status.success() {
         bail!(
             "Rebase onto origin/{} failed — resolve conflicts then run `merges sync` again",
             base_branch
@@ -249,6 +267,23 @@ pub fn ensure_gitignored(root: &Path, pattern: &str) -> Result<()> {
         .open(&exclude)?;
     file.write_all(entry.as_bytes())?;
 
+    Ok(())
+}
+
+/// Enable `rerere` for this repository so conflict resolutions are recorded
+/// and automatically replayed. Equivalent to:
+///   git config rerere.enabled true
+///   git config rerere.autoupdate true
+pub fn enable_rerere(root: &Path) -> Result<()> {
+    for (key, val) in [("rerere.enabled", "true"), ("rerere.autoupdate", "true")] {
+        let status = Command::new("git")
+            .args(["-C", root.to_str().unwrap(), "config", key, val])
+            .status()
+            .context("Failed to run `git config`")?;
+        if !status.success() {
+            bail!("git config {} {} failed", key, val);
+        }
+    }
     Ok(())
 }
 
