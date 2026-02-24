@@ -1,0 +1,44 @@
+[package]
+name = "merges"
+version = "0.1.0"
+edition = "2024"
+description = "CLI tool to break down large PRs into smaller chunks for easier review and daily merges"
+license = "MIT"
+
+[[bin]]
+name = "merges"
+path = "src/main.rs"
+
+[dependencies]
+# CLI
+clap = { version = "4", features = ["derive"] }
+# GitHub API
+octocrab = "0.44"
+# Git operations
+git2 = "0.19"
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+# Serialisation
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Interactive TUI
+dialoguer = "0.11"
+# Progress bars
+indicatif = "0.17"
+# Error handling
+anyhow = "1"
+# Table output
+comfy-table = "7"
+# Terminal colours
+colored = "2"
+# URL parsing (for GitHub URLs)
+url = "2"
+clap_complete = "4.5.66"
+
+[dev-dependencies]
+tempfile = "3"
+
+[lib]
+name = "merges"
+path = "src/lib.rs"
+clap_complete = "4"
