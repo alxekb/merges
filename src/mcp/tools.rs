@@ -94,5 +94,84 @@ pub fn all_tools() -> Vec<Tool> {
                 "properties": {}
             }),
         },
+        Tool {
+            name: "merges_add".to_string(),
+            description: "Add files to an existing chunk (amends its branch commit). \
+                Use after split to move forgotten files into a chunk without re-splitting."
+                .to_string(),
+            input_schema: json!({
+                "type": "object",
+                "required": ["chunk", "files"],
+                "properties": {
+                    "chunk": {
+                        "type": "string",
+                        "description": "Name of the existing chunk to add files to"
+                    },
+                    "files": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "Relative file paths to add to this chunk"
+                    }
+                }
+            }),
+        },
+        Tool {
+            name: "merges_move".to_string(),
+            description: "Move a file from one chunk to another atomically. \
+                Removes the file from the source chunk branch and adds it to the destination."
+                .to_string(),
+            input_schema: json!({
+                "type": "object",
+                "required": ["file", "from", "to"],
+                "properties": {
+                    "file": {
+                        "type": "string",
+                        "description": "Relative path of the file to move"
+                    },
+                    "from": {
+                        "type": "string",
+                        "description": "Name of the source chunk"
+                    },
+                    "to": {
+                        "type": "string",
+                        "description": "Name of the destination chunk"
+                    }
+                }
+            }),
+        },
+        Tool {
+            name: "merges_clean".to_string(),
+            description: "Delete local chunk branches. Pass dry_run:true to preview. \
+                Pass merged:true to only delete branches whose GitHub PRs are merged."
+                .to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "merged": {
+                        "type": "boolean",
+                        "description": "Only delete branches for merged/closed PRs"
+                    },
+                    "dry_run": {
+                        "type": "boolean",
+                        "description": "Return list of branches that would be deleted, without deleting"
+                    }
+                }
+            }),
+        },
+        Tool {
+            name: "merges_doctor".to_string(),
+            description: "Validate state consistency: branch existence, worktrees, gitignore, \
+                duplicate file assignments. Returns a JSON report. Pass repair:true to auto-fix."
+                .to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "repair": {
+                        "type": "boolean",
+                        "description": "Attempt to repair detected issues (e.g. re-add gitignore entry)"
+                    }
+                }
+            }),
+        },
     ]
 }

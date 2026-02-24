@@ -712,4 +712,89 @@ mod tests {
         assert!(content.contains("*.log"), "Existing rules should be preserved");
         assert!(content.contains(".merges.json"), "New pattern should be appended");
     }
+
+    // ── merge_base ────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_merge_base_returns_sha() {
+        let (_dir, root) = make_repo();
+        StdCommand::new("git").args(["checkout", "-b", "feat/test"]).current_dir(&root).output().unwrap();
+        std::fs::write(root.join("x.txt"), "x").unwrap();
+        StdCommand::new("git").args(["add", "."]).current_dir(&root).output().unwrap();
+        StdCommand::new("git").args(["commit", "-m", "branch commit"]).current_dir(&root).output().unwrap();
+
+        let sha = merge_base(&root, "main").unwrap();
+        assert_eq!(sha.len(), 40, "merge-base SHA should be 40 hex chars, got: {}", sha);
+        assert!(sha.chars().all(|c| c.is_ascii_hexdigit()), "SHA should be hex: {}", sha);
+    }
+
+    #[test]
+    fn test_merge_base_errors_on_unknown_branch() {
+        let (_dir, root) = make_repo();
+        let result = merge_base(&root, "no-such-branch");
+        assert!(result.is_err(), "merge_base with unknown branch should error");
+    }
+
+    // ── checkout_files_from ───────────────────────────────────────────────
+
+    #[test]
+    fn test_checkout_files_from_restores_file_content() {
+        let (_dir, root) = make_repo();
+
+        // Feature branch: modify README
+        StdCommand::new("git").args(["checkout", "-b", "feat/checkout-test"]).current_dir(&root).output().unwrap();
+        std::fs::write(root.join("README.md"), "feature content").unwrap();
+        StdCommand::new("git").args(["add", "."]).current_dir(&root).output().unwrap();
+        StdCommand::new("git").args(["commit", "-m", "modify readme"]).current_dir(&root).output().unwrap();
+
+        // Switch to a new branch without the change
+        StdCommand::new("git").args(["checkout", "-b", "chunk-branch"]).current_dir(&root).output().unwrap();
+        StdCommand::new("git").args(["checkout", "main", "--", "README.md"]).current_dir(&root).output().unwrap();
+        StdCommand::new("git").args(["checkout", "main", "--", "README.md"]).current_dir(&root).output().unwrap();
+        // Reset working tree back to main's version to simulate starting fresh
+        std::fs::write(root.join("README.md"), "hello").unwrap(); // main's content
+
+        // Now checkout the file from the feature branch
+        checkout_files_from(&root, "feat/checkout-test", &["README.md".to_string()]).unwrap();
+
+        let content = std::fs::read_to_string(root.join("README.md")).unwrap();
+        assert_eq!(content, "feature content", "File should have feature branch content");
+    }
+
+    // ── enable_rerere ─────────────────────────────────────────────────────
+
+    #[test]
+    fn test_enable_rerere_sets_config() {
+        let (_dir, root) = make_repo();
+        enable_rerere(&root).unwrap();
+
+        let out = StdCommand::new("git")
+            .args(["config", "rerere.enabled"])
+            .current_dir(&root)
+            .output()
+            .unwrap();
+        let val = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        assert_eq!(val, "true", "rerere.enabled should be set to true");
+
+        let out2 = StdCommand::new("git")
+            .args(["config", "rerere.autoupdate"])
+            .current_dir(&root)
+            .output()
+            .unwrap();
+        let val2 = String::from_utf8_lossy(&out2.stdout).trim().to_string();
+        assert_eq!(val2, "true", "rerere.autoupdate should be set to true");
+    }
+
+    #[test]
+    fn test_enable_rerere_is_idempotent() {
+        let (_dir, root) = make_repo();
+        enable_rerere(&root).unwrap();
+        enable_rerere(&root).unwrap(); // second call should not error
+        let out = StdCommand::new("git")
+            .args(["config", "rerere.enabled"])
+            .current_dir(&root)
+            .output()
+            .unwrap();
+        assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "true");
+    }
 }
