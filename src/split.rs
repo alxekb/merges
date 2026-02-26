@@ -199,13 +199,13 @@ pub fn apply_plan(root: &std::path::Path, plan: Vec<ChunkPlan>) -> Result<()> {
 
             git::checkout_files_from(&work_dir, &source_branch, &chunk_plan.files)?;
 
-            let msg = format!(
-                "feat({}): chunk {} - {}\n\nFiles:\n{}",
-                safe_name,
+            let body = format!(
+                "chunk {} - {}\n\nFiles:\n{}",
                 n,
                 chunk_plan.name,
                 chunk_plan.files.join("\n")
             );
+            let msg = git::commit_message(&source_branch, &body);
             git::commit_all(&work_dir, &msg)?;
 
             // Classic mode: return to source branch after each chunk

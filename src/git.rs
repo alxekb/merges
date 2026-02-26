@@ -419,6 +419,65 @@ pub fn sync_status(behind: u64) -> String {
     }
 }
 
+/// Extract a Jira-style ticket prefix from a branch name.
+///
+/// Looks for `[A-Z]+-\d+` at the start of the branch name
+/// (e.g. `JCLARK-97246` from `JCLARK-97246-poc`, `SOL-123` from `SOL-123/my-feature`).
+/// Returns `None` if no ticket prefix is found.
+pub fn ticket_prefix(branch: &str) -> Option<String> {
+    // Strip common branch prefixes like feature/, feat/, fix/
+    let name = branch
+        .rsplit('/')
+        .next()
+        .unwrap_or(branch);
+
+    // Match uppercase letters, hyphen, digits at the start
+    let mut chars = name.chars().peekable();
+    let mut prefix = String::new();
+
+    // Collect uppercase letters
+    while chars.peek().is_some_and(|c| c.is_ascii_uppercase()) {
+        prefix.push(chars.next().unwrap());
+    }
+    if prefix.is_empty() {
+        return None;
+    }
+
+    // Expect a hyphen
+    if chars.next() != Some('-') {
+        return None;
+    }
+    prefix.push('-');
+
+    // Collect digits
+    let mut digits = String::new();
+    while chars.peek().is_some_and(|c| c.is_ascii_digit()) {
+        digits.push(chars.next().unwrap());
+    }
+    if digits.is_empty() {
+        return None;
+    }
+    prefix.push_str(&digits);
+
+    // Must be followed by end-of-string, `-`, or `/`
+    match chars.next() {
+        None | Some('-') | Some('/') => Some(prefix),
+        _ => None,
+    }
+}
+
+/// Build a commit message, prepending the ticket prefix from `source_branch` if found.
+///
+/// Examples:
+/// - branch `JCLARK-97246-poc`, body `chunk 1 - models`  → `JCLARK-97246 chunk 1 - models`
+/// - branch `feat/my-feature`,  body `chunk 1 - models`  → `chunk 1 - models`
+pub fn commit_message(source_branch: &str, body: &str) -> String {
+    match ticket_prefix(source_branch) {
+        Some(ticket) => format!("{} {}", ticket, body),
+        None => body.to_string(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -796,5 +855,63 @@ mod tests {
             .output()
             .unwrap();
         assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "true");
+    }
+
+    // ── ticket_prefix / commit_message ────────────────────────────────────
+
+    #[test]
+    fn test_ticket_prefix_jclark() {
+        assert_eq!(ticket_prefix("JCLARK-97246-poc"), Some("JCLARK-97246".to_string()));
+    }
+
+    #[test]
+    fn test_ticket_prefix_sol() {
+        assert_eq!(ticket_prefix("SOL-123-my-feature"), Some("SOL-123".to_string()));
+    }
+
+    #[test]
+    fn test_ticket_prefix_bare_ticket() {
+        assert_eq!(ticket_prefix("JCLARK-97246"), Some("JCLARK-97246".to_string()));
+    }
+
+    #[test]
+    fn test_ticket_prefix_with_slash_namespace() {
+        // e.g. feature/JCLARK-97246-poc
+        assert_eq!(ticket_prefix("feature/JCLARK-97246-poc"), Some("JCLARK-97246".to_string()));
+    }
+
+    #[test]
+    fn test_ticket_prefix_no_match_feat_branch() {
+        assert_eq!(ticket_prefix("feat/my-feature"), None);
+    }
+
+    #[test]
+    fn test_ticket_prefix_no_match_main() {
+        assert_eq!(ticket_prefix("main"), None);
+    }
+
+    #[test]
+    fn test_ticket_prefix_lowercase_returns_none() {
+        assert_eq!(ticket_prefix("jclark-123-branch"), None);
+    }
+
+    #[test]
+    fn test_commit_message_with_ticket() {
+        let msg = commit_message("JCLARK-97246-poc", "chunk 1 - models");
+        assert_eq!(msg, "JCLARK-97246 chunk 1 - models");
+    }
+
+    #[test]
+    fn test_commit_message_without_ticket() {
+        let msg = commit_message("feat/my-feature", "chunk 1 - models");
+        assert_eq!(msg, "chunk 1 - models");
+    }
+
+    #[test]
+    fn test_commit_message_preserves_multiline_body() {
+        let body = "chunk 1 - models\n\nFiles:\nsrc/a.rs";
+        let msg = commit_message("JCLARK-97246-poc", body);
+        assert!(msg.starts_with("JCLARK-97246 chunk 1 - models"));
+        assert!(msg.contains("Files:\nsrc/a.rs"));
     }
 }

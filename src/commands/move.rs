@@ -105,7 +105,7 @@ pub fn run(
 }
 
 /// Remove `file` from the tip commit of the branch in `work_dir`.
-fn remove_file_from_branch(work_dir: &std::path::Path, file: &str, _source_branch: &str) -> Result<()> {
+fn remove_file_from_branch(work_dir: &std::path::Path, file: &str, source_branch: &str) -> Result<()> {
     let dir = work_dir.to_str().unwrap();
 
     let status = std::process::Command::new("git")
@@ -132,15 +132,17 @@ fn remove_file_from_branch(work_dir: &std::path::Path, file: &str, _source_branc
     let staged = String::from_utf8_lossy(&out.stdout);
 
     if staged.trim().is_empty() {
+        let msg = crate::git::commit_message(source_branch, "chunk: (empty after move)");
         let status = std::process::Command::new("git")
-            .args(["-C", dir, "commit", "--allow-empty", "-m", "chunk: (empty after move)"])
+            .args(["-C", dir, "commit", "--allow-empty", "-m", &msg])
             .status()?;
         if !status.success() {
             bail!("git commit --allow-empty failed");
         }
     } else {
+        let msg = crate::git::commit_message(source_branch, "chunk: update files");
         let status = std::process::Command::new("git")
-            .args(["-C", dir, "commit", "--no-edit", "-m", "chunk: update files"])
+            .args(["-C", dir, "commit", "--no-edit", "-m", &msg])
             .status()?;
         if !status.success() {
             bail!("git commit failed after removing file");
