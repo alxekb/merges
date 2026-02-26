@@ -274,16 +274,18 @@ If you hit a conflict: resolve it, `git rebase --continue`, then re-run `merges 
 ```
 $ merges status
 
-╔═══╦══════════╦══════════════════════════════════════╦═════╦═════════╦══════════════════╦═══════╗
-║ # ║ Chunk    ║ Branch                               ║ PR  ║ CI      ║ Review           ║ Files ║
-╠═══╬══════════╬══════════════════════════════════════╬═════╬═════════╬══════════════════╬═══════╣
-║ 1 ║ db       ║ feat/payments-v2-chunk-1-db          ║ #101║ success ║ approved         ║   2   ║
-║ 2 ║ models   ║ feat/payments-v2-chunk-2-models      ║ #102║ success ║ approved         ║   2   ║
-║ 3 ║ api      ║ feat/payments-v2-chunk-3-api         ║ #103║ pending ║ pending          ║   3   ║
-║ 4 ║ frontend ║ feat/payments-v2-chunk-4-frontend    ║ #104║ failure ║ changes_requested║   3   ║
-║ 5 ║ tests    ║ feat/payments-v2-chunk-5-tests       ║ #105║ pending ║ pending          ║   2   ║
-╚═══╩══════════╩══════════════════════════════════════╩═════╩═════════╩══════════════════╩═══════╝
+╔═══╦══════════╦══════════════════════════════════════╦═══════════╦═════╦═════════╦══════════════════╦═══════╗
+║ # ║ Chunk    ║ Branch                               ║ Sync      ║ PR  ║ CI      ║ Review           ║ Files ║
+╠═══╬══════════╬══════════════════════════════════════╬═══════════╬═════╬═════════╬══════════════════╬═══════╣
+║ 1 ║ db       ║ feat/payments-v2-chunk-1-db          ║ ✓ current ║ #101║ success ║ approved         ║   2   ║
+║ 2 ║ models   ║ feat/payments-v2-chunk-2-models      ║ ✓ current ║ #102║ success ║ approved         ║   2   ║
+║ 3 ║ api      ║ feat/payments-v2-chunk-3-api         ║ ↓ 2 behind║ #103║ pending ║ pending          ║   3   ║
+║ 4 ║ frontend ║ feat/payments-v2-chunk-4-frontend    ║ ↓ 2 behind║ #104║ failure ║ changes_requested║   3   ║
+║ 5 ║ tests    ║ feat/payments-v2-chunk-5-tests       ║ ✓ current ║ #105║ pending ║ pending          ║   2   ║
+╚═══╩══════════╩══════════════════════════════════════╩═══════════╩═════╩═════════╩══════════════════╩═══════╝
 ```
+
+The **Sync** column shows `✓ current` (green) when the chunk branch is up-to-date with the base branch, or `↓ N behind` (yellow) when the base has moved ahead — no network call required.
 
 ---
 
@@ -339,6 +341,40 @@ $ merges clean --merged --yes
 ```
 
 Without `--merged`, it offers to delete all chunk branches regardless of PR state.
+
+---
+
+### `merges doctor [--repair]`
+
+Validates that your local state is consistent and nothing is broken:
+
+```
+$ merges doctor
+
+✗ Chunk branch 'feat/payments-v2-chunk-3-api' does not exist locally.
+✗ .merges.json is not in .git/info/exclude — it may appear as an untracked file.
+
+Run `merges doctor --repair` to attempt automatic fixes.
+```
+
+With `--repair`:
+
+```
+$ merges doctor --repair
+
+✓ All checks passed — state is healthy.
+```
+
+Checks performed:
+
+| Check | What it verifies |
+|---|---|
+| Branch existence | Each chunk branch listed in `.merges.json` exists locally |
+| Worktrees | If worktree mode is on, each worktree directory is present |
+| Gitignore | `.merges.json` is listed in `.git/info/exclude` |
+| Duplicate files | No file is assigned to more than one chunk (corruption guard) |
+
+`--repair` will re-add `.merges.json` to `.git/info/exclude` if missing. For missing branches or worktrees, it reports the issue so you can re-run `merges sync` or `merges split`.
 
 ---
 
@@ -408,7 +444,11 @@ The LLM calls `merges_split` without a plan first to see what files exist, then 
 | `merges_split` | List changed files **or** apply a chunk plan |
 | `merges_push` | Push branches and create/update GitHub PRs |
 | `merges_sync` | Rebase all chunks onto latest base branch |
-| `merges_status` | Return chunk/PR status as structured JSON |
+| `merges_status` | Return chunk/PR/sync status as structured JSON (includes `behind` count per chunk) |
+| `merges_add` | Add files to an existing chunk (amends its branch commit) |
+| `merges_move` | Move a file from one chunk to another atomically |
+| `merges_clean` | Delete chunk branches; `dry_run:true` returns list without deleting |
+| `merges_doctor` | Validate state consistency; `repair:true` auto-fixes issues |
 
 ---
 
@@ -417,7 +457,7 @@ The LLM calls `merges_split` without a plan first to see what files exist, then 
 ```
 Morning: main got new commits overnight
   → merges sync                   # rebase all chunks (rerere handles known conflicts)
-  → merges status                 # check CI / review state
+  → merges status                 # check CI / review state + Sync column shows ↓ N behind
 
 Reviewer asked for a change in the api chunk
   → git checkout feat/payments-v2-chunk-3-api
@@ -432,6 +472,10 @@ Realised a file is in the wrong chunk
 Forgot a file
   → merges add models src/models/payment_method.rs
   → merges push
+
+Something feels off — check state consistency
+  → merges doctor                 # shows ✓ OK / ✗ issues per check
+  → merges doctor --repair        # auto-fix gitignore and config issues
 
 PRs #101 and #102 merged — clean up
   → merges clean --merged --yes

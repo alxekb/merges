@@ -157,3 +157,34 @@ fn test_mcp_move_unknown_chunk_returns_error_not_unknown_tool() {
         "Should dispatch to merges_move, got: {}", err_msg
     );
 }
+
+// ── merges_status includes behind count ───────────────────────────────────────
+
+/// merges_status JSON must include a "sync" field per chunk with behind count and label.
+#[test]
+fn test_mcp_status_includes_sync_info() {
+    let (_dir, root) = make_repo_with_two_chunks();
+    std::env::set_current_dir(&root).unwrap();
+
+    let result = merges::mcp::call_tool_sync("merges_status", &serde_json::json!({}));
+    assert!(result.is_ok(), "merges_status should not error: {:?}", result);
+
+    let text = result.unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&text)
+        .expect("merges_status should return valid JSON");
+
+    let chunks = parsed["chunks"].as_array().expect("chunks must be array");
+    assert!(!chunks.is_empty(), "should have at least one chunk");
+
+    let first = &chunks[0];
+    assert!(first.get("behind").is_some(), "each chunk must have 'behind' count: {}", first);
+    assert!(first.get("sync").is_some(), "each chunk must have 'sync' label: {}", first);
+
+    // Branch was just created from same commit — should be 0 behind
+    let behind = first["behind"].as_u64().unwrap_or(99);
+    assert_eq!(behind, 0, "freshly created chunk branch should be 0 behind base");
+
+    let sync_label = first["sync"].as_str().unwrap_or("");
+    assert!(sync_label.contains("current") || sync_label.contains("behind"),
+        "sync label should be meaningful: {}", sync_label);
+}

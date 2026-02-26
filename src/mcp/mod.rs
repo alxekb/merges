@@ -200,13 +200,19 @@ async fn dispatch_tool(name: &str, args: &Value) -> Result<String> {
                 "source_branch": state.source_branch,
                 "base_branch": state.base_branch,
                 "strategy": state.strategy,
-                "chunks": state.chunks.iter().map(|c| json!({
-                    "name": c.name,
-                    "branch": c.branch,
-                    "files_count": c.files.len(),
-                    "pr_number": c.pr_number,
-                    "pr_url": c.pr_url
-                })).collect::<Vec<_>>()
+                "chunks": state.chunks.iter().map(|c| {
+                    let behind = git::commits_behind(&root, &c.branch, &state.base_branch)
+                        .unwrap_or(0);
+                    json!({
+                        "name": c.name,
+                        "branch": c.branch,
+                        "files_count": c.files.len(),
+                        "pr_number": c.pr_number,
+                        "pr_url": c.pr_url,
+                        "behind": behind,
+                        "sync": git::sync_status(behind)
+                    })
+                }).collect::<Vec<_>>()
             }))?)
         }
 
