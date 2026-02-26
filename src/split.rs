@@ -123,6 +123,12 @@ pub fn apply_plan(root: &std::path::Path, plan: Vec<ChunkPlan>) -> Result<()> {
     let mut state = MergesState::load(root)?;
     let source_branch = state.source_branch.clone();
     let base_branch = state.base_branch.clone();
+    // Use explicit commit_prefix if set, otherwise auto-detect from source branch name.
+    let effective_prefix = state
+        .commit_prefix
+        .clone()
+        .or_else(|| git::ticket_prefix(&source_branch))
+        .unwrap_or_default();
 
     // Ensure .merges.json won't block branch checkouts (it must be gitignored)
     git::ensure_gitignored(root, ".merges.json")?;
@@ -205,7 +211,11 @@ pub fn apply_plan(root: &std::path::Path, plan: Vec<ChunkPlan>) -> Result<()> {
                 chunk_plan.name,
                 chunk_plan.files.join("\n")
             );
-            let msg = git::commit_message(&source_branch, &body);
+            let msg = if effective_prefix.is_empty() {
+                body
+            } else {
+                format!("{} {}", effective_prefix, body)
+            };
             git::commit_all(&work_dir, &msg)?;
 
             // Classic mode: return to source branch after each chunk

@@ -40,6 +40,10 @@ pub struct MergesState {
     pub strategy: Strategy,
     #[serde(default)]
     pub use_worktrees: bool,
+    /// Optional explicit commit/PR message prefix (overrides auto-detected ticket).
+    /// Set via `merges init --commit-prefix JCLARK-97246`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub commit_prefix: Option<String>,
     pub chunks: Vec<Chunk>,
 }
 
@@ -76,6 +80,7 @@ mod tests {
             repo_name: "myrepo".to_string(),
             strategy: Strategy::Stacked,
             use_worktrees: false,
+            commit_prefix: None,
             chunks: vec![],
         }
     }
@@ -288,5 +293,46 @@ mod tests {
         let raw = std::fs::read_to_string(dir.path().join(STATE_FILE)).unwrap();
         assert!(raw.contains('\n'), "Saved JSON should be pretty-printed with newlines");
         assert!(raw.contains("  "), "Saved JSON should be indented");
+    }
+
+    // ── commit_prefix field ────────────────────────────────────────────────
+
+    /// State without commit_prefix should deserialize with None (backward compat).
+    #[test]
+    fn test_commit_prefix_defaults_to_none() {
+        let state = sample_state();
+        assert!(state.commit_prefix.is_none(), "commit_prefix should default to None");
+    }
+
+    /// commit_prefix can be set and round-trips through save/load.
+    #[test]
+    fn test_commit_prefix_roundtrips() {
+        let dir = TempDir::new().unwrap();
+        let mut state = sample_state();
+        state.commit_prefix = Some("JCLARK-97246".to_string());
+        state.save(dir.path()).unwrap();
+
+        let loaded = MergesState::load(dir.path()).unwrap();
+        assert_eq!(loaded.commit_prefix, Some("JCLARK-97246".to_string()));
+    }
+
+    /// Old state files without commit_prefix load without error.
+    #[test]
+    fn test_commit_prefix_backward_compatible() {
+        let dir = TempDir::new().unwrap();
+        // Write state without commit_prefix field
+        let json = r#"{
+            "base_branch": "main",
+            "source_branch": "feat/big",
+            "repo_owner": "acme",
+            "repo_name": "myrepo",
+            "strategy": "stacked",
+            "use_worktrees": false,
+            "chunks": []
+        }"#;
+        std::fs::write(dir.path().join(STATE_FILE), json).unwrap();
+
+        let state = MergesState::load(dir.path()).unwrap();
+        assert!(state.commit_prefix.is_none(), "Missing field should deserialize as None");
     }
 }

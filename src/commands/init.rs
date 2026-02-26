@@ -7,7 +7,7 @@ use crate::{
     state::{MergesState, Strategy},
 };
 
-pub fn run(base_branch: Option<String>, use_worktrees: bool) -> Result<()> {
+pub fn run(base_branch: Option<String>, use_worktrees: bool, commit_prefix: Option<String>) -> Result<()> {
     let root = git::repo_root()?;
     let state_path = crate::state::MergesState::path(&root);
 
@@ -41,6 +41,7 @@ pub fn run(base_branch: Option<String>, use_worktrees: bool) -> Result<()> {
         repo_name: repo.clone(),
         strategy: Strategy::Stacked,
         use_worktrees,
+        commit_prefix: commit_prefix.clone(),
         chunks: vec![],
     };
 
@@ -49,13 +50,14 @@ pub fn run(base_branch: Option<String>, use_worktrees: bool) -> Result<()> {
     git::enable_rerere(&root)?;
 
     println!(
-        "{} Initialised merges for {}/{} — source: {}, base: {}{}",
+        "{} Initialised merges for {}/{} — source: {}, base: {}{}{}",
         "✓".green().bold(),
         owner.cyan(),
         repo.cyan(),
         source_branch.yellow(),
         base.yellow(),
-        if use_worktrees { " (worktrees enabled)" } else { "" }
+        if use_worktrees { " (worktrees enabled)" } else { "" },
+        commit_prefix.as_deref().map(|p| format!(" (commit prefix: {})", p)).unwrap_or_default()
     );
     println!("  {} rerere enabled — conflict resolutions will be replayed automatically.", "·".dimmed());
     println!(

@@ -15,7 +15,8 @@ pub fn all_tools() -> Vec<Tool> {
         Tool {
             name: "merges_init".to_string(),
             description: "Initialise merges tracking for the current git repository. \
-                Detects the source branch and sets up .merges.json."
+                Detects the source branch and sets up .merges.json. \
+                Pass commit_prefix to override auto-detected ticket prefix for commit messages and PR titles."
                 .to_string(),
             input_schema: json!({
                 "type": "object",
@@ -23,6 +24,10 @@ pub fn all_tools() -> Vec<Tool> {
                     "base_branch": {
                         "type": "string",
                         "description": "The base branch PRs will target (default: main)"
+                    },
+                    "commit_prefix": {
+                        "type": "string",
+                        "description": "Explicit prefix for all commit messages and PR titles (e.g. JCLARK-97246). Auto-detected from branch name if omitted."
                     }
                 }
             }),

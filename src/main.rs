@@ -37,6 +37,11 @@ enum Commands {
         /// working tree never changes during push/sync operations
         #[arg(long)]
         worktrees: bool,
+
+        /// Explicit commit/PR message prefix to use instead of auto-detected ticket
+        /// (e.g. --commit-prefix JCLARK-97246 for repos with strict hook formats)
+        #[arg(long, value_name = "PREFIX")]
+        commit_prefix: Option<String>,
     },
 
     /// Assign changed files to named chunks and create branches.
@@ -127,7 +132,7 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Init { base, worktrees } => commands::init::run(base, worktrees)?,
+        Commands::Init { base, worktrees, commit_prefix } => commands::init::run(base, worktrees, commit_prefix)?,
         Commands::Split { plan, auto } => commands::split::run(plan, auto)?,
         Commands::Push { stacked, independent } => commands::push::run(stacked, independent).await?,
         Commands::Sync => commands::sync::run()?,

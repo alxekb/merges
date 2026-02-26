@@ -82,12 +82,14 @@ pub async fn run(stacked: bool, independent: bool) -> Result<()> {
             files_list
         );
 
-        let title = format!(
-            "[{}/{}] {}",
-            i + 1,
-            state.chunks.len(),
-            chunk.name
-        );
+        let title = {
+            let body = format!("[{}/{}] {}", i + 1, state.chunks.len(), chunk.name);
+            // Explicit commit_prefix overrides auto-detection
+            match &state.commit_prefix {
+                Some(p) => format!("{} {}", p, body),
+                None => git::pr_title(&state.source_branch, &body),
+            }
+        };
 
         if let Some(pr_number) = chunk.pr_number {
             // PR exists — update base if strategy changed

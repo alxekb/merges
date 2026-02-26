@@ -478,6 +478,15 @@ pub fn commit_message(source_branch: &str, body: &str) -> String {
     }
 }
 
+/// Build a PR title, prepending the ticket prefix from `source_branch` if found.
+///
+/// Examples:
+/// - branch `JCLARK-97246-poc`, body `[1/3] models`  → `JCLARK-97246 [1/3] models`
+/// - branch `feat/my-feature`,  body `[1/3] models`  → `[1/3] models`
+pub fn pr_title(source_branch: &str, body: &str) -> String {
+    commit_message(source_branch, body)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -913,5 +922,25 @@ mod tests {
         let msg = commit_message("JCLARK-97246-poc", body);
         assert!(msg.starts_with("JCLARK-97246 chunk 1 - models"));
         assert!(msg.contains("Files:\nsrc/a.rs"));
+    }
+
+    // ── pr_title ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_pr_title_with_ticket_branch() {
+        let title = pr_title("JCLARK-97246-poc", "[1/3] models");
+        assert_eq!(title, "JCLARK-97246 [1/3] models");
+    }
+
+    #[test]
+    fn test_pr_title_without_ticket_branch() {
+        let title = pr_title("feat/my-feature", "[1/3] models");
+        assert_eq!(title, "[1/3] models");
+    }
+
+    #[test]
+    fn test_pr_title_sol_prefix() {
+        let title = pr_title("SOL-123-fix-auth", "[2/4] api");
+        assert_eq!(title, "SOL-123 [2/4] api");
     }
 }
