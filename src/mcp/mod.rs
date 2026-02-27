@@ -229,7 +229,7 @@ async fn dispatch_tool(name: &str, args: &Value) -> Result<String> {
                 .iter()
                 .filter_map(|v| v.as_str().map(String::from))
                 .collect();
-            commands::add::run(&root, &chunk, &files)?;
+            commands::add::run(&root, &Some(chunk.clone()), &files)?;
             Ok(serde_json::to_string_pretty(&json!({
                 "status": "ok",
                 "chunk": chunk,
@@ -239,10 +239,17 @@ async fn dispatch_tool(name: &str, args: &Value) -> Result<String> {
 
         "merges_move" => {
             let root = git::repo_root()?;
-            let file = args["file"]
-                .as_str()
-                .ok_or_else(|| anyhow::anyhow!("'file' is required"))?
-                .to_string();
+            let files: Vec<String> = if let Some(f) = args.get("file") {
+                vec![f.as_str().ok_or_else(|| anyhow::anyhow!("'file' must be a string"))?.to_string()]
+            } else if let Some(fs) = args.get("files") {
+                fs.as_array()
+                    .ok_or_else(|| anyhow::anyhow!("'files' must be an array"))?
+                    .iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            } else {
+                anyhow::bail!("Either 'file' or 'files' is required");
+            };
             let from = args["from"]
                 .as_str()
                 .ok_or_else(|| anyhow::anyhow!("'from' is required"))?
@@ -251,10 +258,10 @@ async fn dispatch_tool(name: &str, args: &Value) -> Result<String> {
                 .as_str()
                 .ok_or_else(|| anyhow::anyhow!("'to' is required"))?
                 .to_string();
-            commands::r#move::run(&root, &Some(file.clone()), &Some(from.clone()), &Some(to.clone()))?;
+            commands::r#move::run(&root, &files, &Some(from.clone()), &Some(to.clone()))?;
             Ok(serde_json::to_string_pretty(&json!({
                 "status": "ok",
-                "file": file,
+                "files": files,
                 "from": from,
                 "to": to
             }))?)

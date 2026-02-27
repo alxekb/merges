@@ -99,7 +99,7 @@ fn test_move_removes_from_source_chunk() {
     let (_dir, root) = make_repo();
     setup_two_chunks(&root);
 
-    merges::commands::r#move::run(&root, &Some("src/b.rs".to_string()), &Some("chunk-a".to_string()), &Some("chunk-b".to_string())).unwrap();
+    merges::commands::r#move::run(&root, &["src/b.rs".to_string()], &Some("chunk-a".to_string()), &Some("chunk-b".to_string())).unwrap();
 
     let state = merges::state::MergesState::load(&root).unwrap();
     let chunk_a = state.chunks.iter().find(|c| c.name == "chunk-a").unwrap();
@@ -116,7 +116,7 @@ fn test_move_adds_to_dest_chunk() {
     let (_dir, root) = make_repo();
     setup_two_chunks(&root);
 
-    merges::commands::r#move::run(&root, &Some("src/b.rs".to_string()), &Some("chunk-a".to_string()), &Some("chunk-b".to_string())).unwrap();
+    merges::commands::r#move::run(&root, &["src/b.rs".to_string()], &Some("chunk-a".to_string()), &Some("chunk-b".to_string())).unwrap();
 
     let state = merges::state::MergesState::load(&root).unwrap();
     let chunk_b = state.chunks.iter().find(|c| c.name == "chunk-b").unwrap();
@@ -133,7 +133,7 @@ fn test_move_source_branch_no_longer_has_file() {
     let (_dir, root) = make_repo();
     setup_two_chunks(&root);
 
-    merges::commands::r#move::run(&root, &Some("src/b.rs".to_string()), &Some("chunk-a".to_string()), &Some("chunk-b".to_string())).unwrap();
+    merges::commands::r#move::run(&root, &["src/b.rs".to_string()], &Some("chunk-a".to_string()), &Some("chunk-b".to_string())).unwrap();
 
     merges::git::checkout(&root, "feat/big-chunk-1-chunk-a").unwrap();
     let files = merges::git::changed_files(&root, "main").unwrap();
@@ -150,7 +150,7 @@ fn test_move_dest_branch_has_file() {
     let (_dir, root) = make_repo();
     setup_two_chunks(&root);
 
-    merges::commands::r#move::run(&root, &Some("src/b.rs".to_string()), &Some("chunk-a".to_string()), &Some("chunk-b".to_string())).unwrap();
+    merges::commands::r#move::run(&root, &["src/b.rs".to_string()], &Some("chunk-a".to_string()), &Some("chunk-b".to_string())).unwrap();
 
     merges::git::checkout(&root, "feat/big-chunk-2-chunk-b").unwrap();
     let mut files = merges::git::changed_files(&root, "main").unwrap();
@@ -168,7 +168,7 @@ fn test_move_restores_source_branch() {
     let (_dir, root) = make_repo();
     setup_two_chunks(&root);
 
-    merges::commands::r#move::run(&root, &Some("src/b.rs".to_string()), &Some("chunk-a".to_string()), &Some("chunk-b".to_string())).unwrap();
+    merges::commands::r#move::run(&root, &["src/b.rs".to_string()], &Some("chunk-a".to_string()), &Some("chunk-b".to_string())).unwrap();
 
     let branch = merges::git::current_branch(&root).unwrap();
     assert_eq!(branch, "feat/big", "Source branch should be restored after move");
@@ -180,7 +180,7 @@ fn test_move_file_not_in_source_chunk_errors() {
     let (_dir, root) = make_repo();
     setup_two_chunks(&root);
 
-    let result = merges::commands::r#move::run(&root, &Some("src/c.rs".to_string()), &Some("chunk-a".to_string()), &Some("chunk-b".to_string()));
+    let result = merges::commands::r#move::run(&root, &["src/c.rs".to_string()], &Some("chunk-a".to_string()), &Some("chunk-b".to_string()));
     assert!(result.is_err(), "Should fail when file is not in source chunk");
     let msg = result.unwrap_err().to_string();
     assert!(
@@ -196,7 +196,7 @@ fn test_move_to_nonexistent_chunk_errors() {
     let (_dir, root) = make_repo();
     setup_two_chunks(&root);
 
-    let result = merges::commands::r#move::run(&root, &Some("src/b.rs".to_string()), &Some("chunk-a".to_string()), &Some("no-such-chunk".to_string()));
+    let result = merges::commands::r#move::run(&root, &["src/b.rs".to_string()], &Some("chunk-a".to_string()), &Some("no-such-chunk".to_string()));
     assert!(result.is_err(), "Should fail when dest chunk doesn't exist");
 }
 
@@ -206,6 +206,6 @@ fn test_move_from_nonexistent_chunk_errors() {
     let (_dir, root) = make_repo();
     setup_two_chunks(&root);
 
-    let result = merges::commands::r#move::run(&root, &Some("src/b.rs".to_string()), &Some("no-such-chunk".to_string()), &Some("chunk-b".to_string()));
+    let result = merges::commands::r#move::run(&root, &["src/b.rs".to_string()], &Some("no-such-chunk".to_string()), &Some("chunk-b".to_string()));
     assert!(result.is_err(), "Should fail when src chunk doesn't exist");
 }

@@ -58,7 +58,7 @@ fn test_add_file_to_existing_chunk() {
     let (_dir, root) = make_repo();
     setup_with_chunk(&root);
 
-    merges::commands::add::run(&root, "part-a", &["src/b.rs".to_string()]).unwrap();
+    merges::commands::add::run(&root, &Some("part-a".to_string()), &["src/b.rs".to_string()]).unwrap();
 
     // Check out chunk branch and verify both files are present
     merges::git::checkout(&root, "feat/big-chunk-1-part-a").unwrap();
@@ -74,7 +74,7 @@ fn test_add_updates_state_file() {
     let (_dir, root) = make_repo();
     setup_with_chunk(&root);
 
-    merges::commands::add::run(&root, "part-a", &["src/b.rs".to_string()]).unwrap();
+    merges::commands::add::run(&root, &Some("part-a".to_string()), &["src/b.rs".to_string()]).unwrap();
 
     let state = merges::state::MergesState::load(&root).unwrap();
     let chunk = state.chunks.iter().find(|c| c.name == "part-a").unwrap();
@@ -89,7 +89,7 @@ fn test_add_idempotent_for_existing_file() {
     setup_with_chunk(&root);
 
     // src/a.rs is already in the chunk
-    merges::commands::add::run(&root, "part-a", &["src/a.rs".to_string()]).unwrap();
+    merges::commands::add::run(&root, &Some("part-a".to_string()), &["src/a.rs".to_string()]).unwrap();
 
     let state = merges::state::MergesState::load(&root).unwrap();
     let chunk = state.chunks.iter().find(|c| c.name == "part-a").unwrap();
@@ -103,7 +103,7 @@ fn test_add_file_not_in_diff_returns_error() {
     let (_dir, root) = make_repo();
     setup_with_chunk(&root);
 
-    let result = merges::commands::add::run(&root, "part-a", &["src/nonexistent.rs".to_string()]);
+    let result = merges::commands::add::run(&root, &Some("part-a".to_string()), &["src/nonexistent.rs".to_string()]);
     assert!(result.is_err(), "Adding nonexistent file should fail");
     let msg = result.unwrap_err().to_string();
     assert!(msg.contains("nonexistent.rs"), "Error should name the bad file: {}", msg);
@@ -115,7 +115,7 @@ fn test_add_to_nonexistent_chunk_returns_error() {
     let (_dir, root) = make_repo();
     setup_with_chunk(&root);
 
-    let result = merges::commands::add::run(&root, "no-such-chunk", &["src/b.rs".to_string()]);
+    let result = merges::commands::add::run(&root, &Some("no-such-chunk".to_string()), &["src/b.rs".to_string()]);
     assert!(result.is_err());
     let msg = result.unwrap_err().to_string();
     assert!(msg.contains("no-such-chunk"), "Error should name the missing chunk: {}", msg);
@@ -127,7 +127,7 @@ fn test_add_restores_source_branch() {
     let (_dir, root) = make_repo();
     setup_with_chunk(&root);
 
-    merges::commands::add::run(&root, "part-a", &["src/c.rs".to_string()]).unwrap();
+    merges::commands::add::run(&root, &Some("part-a".to_string()), &["src/c.rs".to_string()]).unwrap();
 
     let branch = merges::git::current_branch(&root).unwrap();
     assert_eq!(branch, "feat/big", "Source branch should be active after add");
@@ -139,7 +139,7 @@ fn test_add_multiple_files_at_once() {
     let (_dir, root) = make_repo();
     setup_with_chunk(&root);
 
-    merges::commands::add::run(&root, "part-a", &["src/b.rs".to_string(), "src/c.rs".to_string()]).unwrap();
+    merges::commands::add::run(&root, &Some("part-a".to_string()), &["src/b.rs".to_string(), "src/c.rs".to_string()]).unwrap();
 
     let state = merges::state::MergesState::load(&root).unwrap();
     let chunk = state.chunks.iter().find(|c| c.name == "part-a").unwrap();

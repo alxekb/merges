@@ -6,6 +6,7 @@ mod github;
 mod mcp;
 mod split;
 mod state;
+mod ui;
 
 use anyhow::Result;
 use clap::{CommandFactory, Parser, Subcommand};
@@ -88,20 +89,21 @@ enum Commands {
         yes: bool,
     },
 
-    /// Add files to an existing chunk
+    /// Add files to an existing chunk (interactive by default)
     Add {
         /// Name of the chunk to add files to
-        chunk: String,
+        chunk: Option<String>,
 
         /// Files to add (relative paths)
-        #[arg(required = true)]
+        #[arg(required = false)]
         files: Vec<String>,
     },
 
-    /// Move a file from one chunk to another (interactive by default)
+    /// Move files from one chunk to another (interactive by default)
     Move {
-        /// File to move (relative path)
-        file: Option<String>,
+        /// Files to move (relative paths)
+        #[arg(required = false)]
+        files: Vec<String>,
 
         /// Source chunk name
         #[arg(long = "from")]
@@ -143,9 +145,9 @@ async fn main() -> Result<()> {
             let root = git::repo_root()?;
             commands::add::run(&root, &chunk, &files)?;
         }
-        Commands::Move { file, from, to } => {
+        Commands::Move { files, from, to } => {
             let root = git::repo_root()?;
-            commands::r#move::run(&root, &file, &from, &to)?;
+            commands::r#move::run(&root, &files, &from, &to)?;
         }
         Commands::Doctor { repair } => {
             let root = git::repo_root()?;

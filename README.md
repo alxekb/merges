@@ -287,14 +287,24 @@ It also detects if local branches have been **deleted** or if PRs have been **me
 
 ---
 
-### `merges add <chunk> <file>...`
+### `merges add [--chunk <name> <file>...]`
 
-You forgot `src/models/payment_method.rs` and it should be in the `models` chunk:
+You forgot `src/models/payment_method.rs` and it should be in the `models` chunk.
 
+**Interactive UI (default):**
 ```
-$ merges add models src/models/payment_method.rs
+$ merges add
+? Add files TO chunk: models (2 files)
+? Select files to add to 'models' (Space = toggle, Enter = confirm)
+  ▸ [x] src/models/payment_method.rs
+    [ ] tests/unit/payment_test.rs
 
 ✓ Added 1 file(s) to chunk 'models'
+```
+
+**Non-interactive:**
+```
+$ merges add models src/models/payment_method.rs
 ```
 
 What happens internally:
@@ -308,23 +318,26 @@ Idempotent — adding a file already in the chunk is a no-op.
 
 ---
 
-### `merges move [--file <path> --from <chunk> --to <chunk>]`
+### `merges move [--file <path>... --from <chunk> --to <chunk>]`
 
-Realise `src/api/webhooks.rs` depends on models not yet merged and should ship with the `models` chunk, not `api`.
+Realise `src/api/webhooks.rs` and `src/api/handlers.rs` depend on models not yet merged and should ship with the `models` chunk, not `api`.
 
 **Interactive UI (default):**
 ```
 $ merges move
-? Move file FROM chunk: api (3 files)
-? File to move from 'api': src/api/webhooks.rs
-? Move 'src/api/webhooks.rs' TO chunk: models
+? Move files FROM: api (3 files)
+? Files to move from 'api' (Space = toggle, Enter = confirm)
+  ▸ [x] src/api/webhooks.rs
+    [x] src/api/handlers.rs
+    [ ] src/api/routes.rs
+? Move 2 file(s) TO: models
 
-✓ Moved 'src/api/webhooks.rs' from 'api' → 'models'
+✓ Moved 2 file(s) from 'api' → 'models'
 ```
 
 **Non-interactive:**
 ```
-$ merges move src/api/webhooks.rs --from api --to models
+$ merges move src/api/webhooks.rs src/api/handlers.rs --from api --to models
 ```
 
 **What happens internally:**

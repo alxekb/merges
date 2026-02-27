@@ -1,9 +1,9 @@
 use anyhow::{bail, Result};
 use colored::Colorize;
-use dialoguer::{theme::ColorfulTheme, Confirm, Input, MultiSelect};
+use dialoguer::{Confirm, Input};
 use indicatif::{ProgressBar, ProgressStyle};
 
-use crate::{git, split::{auto_group_files, ChunkPlan}, state::MergesState};
+use crate::{git, split::{auto_group_files, ChunkPlan}, state::MergesState, ui};
 
 /// Entry point for `merges split`.
 ///
@@ -130,12 +130,9 @@ fn run_interactive(
             .with_prompt("Chunk name (e.g. models, api, frontend)")
             .interact_text()?;
 
-        let selections = MultiSelect::with_theme(&ColorfulTheme::default())
-            .with_prompt("Select files (Space = toggle, Enter = confirm)")
-            .items(&remaining)
-            .interact()?;
+        let selected_files = ui::select_files("Select files", &remaining)?;
 
-        if selections.is_empty() {
+        if selected_files.is_empty() {
             let stop = Confirm::new()
                 .with_prompt("No files selected — stop assigning chunks?")
                 .default(false)
@@ -146,7 +143,6 @@ fn run_interactive(
             continue;
         }
 
-        let selected_files: Vec<String> = selections.iter().map(|&i| remaining[i].clone()).collect();
         assigned.extend(selected_files.clone());
         new_plans.push(ChunkPlan { name: chunk_name, files: selected_files });
 
