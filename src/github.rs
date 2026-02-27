@@ -49,21 +49,55 @@ pub async fn create_pr(
     Ok((number, url))
 }
 
+/// Find an open pull request for the given head branch.
+pub async fn find_pr_for_branch(
+    client: &Octocrab,
+    owner: &str,
+    repo: &str,
+    head: &str,
+) -> Result<Option<(u64, String)>> {
+    let pulls = client
+        .pulls(owner, repo)
+        .list()
+        .head(head)
+        .state(octocrab::params::State::Open)
+        .per_page(1)
+        .send()
+        .await
+        .context("Failed to list PRs for branch")?;
+
+    if let Some(pr) = pulls.items.first() {
+        let number = pr.number;
+        let url = pr
+            .html_url
+            .as_ref()
+            .map(|u| u.to_string())
+            .unwrap_or_else(|| format!("https://github.com/{}/{}/pull/{}", owner, repo, number));
+        Ok(Some((number, url)))
+    } else {
+        Ok(None)
+    }
+}
+
 /// Update the base branch of an existing PR (used in stacked mode after lower chunk merges).
-pub async fn update_pr_base(
+pub async fn update_pr(
     client: &Octocrab,
     owner: &str,
     repo: &str,
     pr_number: u64,
     new_base: &str,
+    title: &str,
+    body: &str,
 ) -> Result<()> {
     client
         .pulls(owner, repo)
         .update(pr_number)
         .base(new_base)
+        .title(title)
+        .body(body)
         .send()
         .await
-        .with_context(|| format!("Failed to update base for PR #{}", pr_number))?;
+        .with_context(|| format!("Failed to update PR #{}", pr_number))?;
     Ok(())
 }
 

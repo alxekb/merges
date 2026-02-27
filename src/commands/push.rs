@@ -112,17 +112,41 @@ pub async fn run(stacked: bool, independent: bool) -> Result<()> {
             }
         };
 
-        if let Some(pr_number) = chunk.pr_number {
-            // PR exists — update base if strategy changed
+        let pr_info = if let Some(pr_number) = chunk.pr_number {
+            Some((pr_number, chunk.pr_url.clone().unwrap_or_default()))
+        } else {
+            // Check if PR already exists on GitHub for this branch
+            pb.set_message(format!("[{}] Checking for existing PR…", chunk.name));
+            github::find_pr_for_branch(&gh, &state.repo_owner, &state.repo_name, &chunk.branch).await?
+        };
+
+        if let Some((pr_number, pr_url)) = pr_info {
+            // PR exists — update it
             pb.set_message(format!("[{}] Updating PR #{}…", chunk.name, pr_number));
-            github::update_pr_base(&gh, &state.repo_owner, &state.repo_name, pr_number, &pr_base)
-                .await?;
+            github::update_pr(
+                &gh,
+                &state.repo_owner,
+                &state.repo_name,
+                pr_number,
+                &pr_base,
+                &title,
+                &body,
+            )
+            .await?;
+
+            if chunk.pr_number.is_none() {
+                // Recovered PR number from GitHub
+                state.chunks[i].pr_number = Some(pr_number);
+                state.chunks[i].pr_url = Some(pr_url.clone());
+                state.save(&root)?;
+            }
+
             pb.finish_with_message(format!(
                 "{} [{}] PR #{} updated → {}",
                 "✓".green(),
                 chunk.name.cyan(),
                 pr_number,
-                chunk.pr_url.as_deref().unwrap_or("").dimmed()
+                pr_url.dimmed()
             ));
         } else {
             // Create new PR
