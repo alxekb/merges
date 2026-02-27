@@ -169,7 +169,7 @@ pub fn fetch_and_rebase_stacked(root: &Path, base_branch: &str) -> Result<()> {
 
 fn fetch(root: &Path) -> Result<()> {
     let status = Command::new("git")
-        .args(["-C", root.to_str().unwrap(), "fetch", "origin"])
+        .args(["-C", root.to_str().unwrap(), "fetch", "--prune", "origin"])
         .status()
         .context("git fetch failed")?;
     if !status.success() {

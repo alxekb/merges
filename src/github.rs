@@ -17,6 +17,7 @@ pub struct PrInfo {
     pub url: String,
     pub title: String,
     pub state: String,
+    pub is_merged: bool,
     pub ci_status: String,
     pub review_state: String,
 }
@@ -91,6 +92,8 @@ pub async fn get_pr_info(
 
     let title = pr.title.unwrap_or_default();
 
+    let is_merged = pr.merged_at.is_some();
+
     // Fetch combined commit status
     let ci_status = get_ci_status(client, owner, repo, pr_number).await.unwrap_or_else(|_| "unknown".to_string());
     let review_state = get_review_state(client, owner, repo, pr_number).await.unwrap_or_else(|_| "unknown".to_string());
@@ -100,6 +103,7 @@ pub async fn get_pr_info(
         url,
         title,
         state,
+        is_merged,
         ci_status,
         review_state,
     })

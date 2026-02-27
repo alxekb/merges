@@ -40,12 +40,33 @@ pub async fn run(stacked: bool, independent: bool) -> Result<()> {
         .template("{spinner} {msg}")
         .unwrap();
 
+    let mut current_stacked_base = state.base_branch.clone();
+
     for i in 0..state.chunks.len() {
         let chunk = state.chunks[i].clone();
         let pb = mp.add(ProgressBar::new_spinner());
         pb.set_style(spinner_style.clone());
         pb.enable_steady_tick(std::time::Duration::from_millis(80));
-        pb.set_message(format!("Processing chunk '{}'…", chunk.name));
+        pb.set_message(format!("Checking PR status for '{}'…", chunk.name));
+
+        let mut is_merged = false;
+        if let Some(pr_number) = chunk.pr_number {
+            if let Ok(info) = github::get_pr_info(&gh, &state.repo_owner, &state.repo_name, pr_number).await {
+                if info.is_merged {
+                    is_merged = true;
+                }
+            }
+        }
+
+        if is_merged {
+            pb.finish_with_message(format!(
+                "{} [{}] PR #{} already merged — skipping",
+                "✓".green(),
+                chunk.name.cyan(),
+                chunk.pr_number.unwrap()
+            ));
+            continue;
+        }
 
         // Switch to chunk branch and sync with base
         // In worktree mode, operate in the chunk's worktree dir — no branch checkout needed.
@@ -67,8 +88,8 @@ pub async fn run(stacked: bool, independent: bool) -> Result<()> {
 
         // Determine base for this PR
         let pr_base = match strategy {
-            Strategy::Stacked if i > 0 => state.chunks[i - 1].branch.clone(),
-            _ => state.base_branch.clone(),
+            Strategy::Stacked => current_stacked_base.clone(),
+            Strategy::Independent => state.base_branch.clone(),
         };
 
         // Build PR body
@@ -129,6 +150,11 @@ pub async fn run(stacked: bool, independent: bool) -> Result<()> {
                 pr_number,
                 pr_url.dimmed()
             ));
+        }
+
+        // Update stacked base for next chunk if applicable
+        if strategy == Strategy::Stacked {
+            current_stacked_base = chunk.branch.clone();
         }
     }
 
