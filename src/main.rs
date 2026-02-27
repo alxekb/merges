@@ -101,15 +101,15 @@ enum Commands {
     /// Move a file from one chunk to another
     Move {
         /// File to move (relative path)
-        file: String,
+        file: Option<String>,
 
         /// Source chunk name
         #[arg(long = "from")]
-        from: String,
+        from: Option<String>,
 
         /// Destination chunk name
         #[arg(long = "to")]
-        to: String,
+        to: Option<String>,
     },
 
     /// Validate state consistency (branch existence, worktrees, gitignore)

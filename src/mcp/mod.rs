@@ -251,7 +251,7 @@ async fn dispatch_tool(name: &str, args: &Value) -> Result<String> {
                 .as_str()
                 .ok_or_else(|| anyhow::anyhow!("'to' is required"))?
                 .to_string();
-            commands::r#move::run(&root, &file, &from, &to)?;
+            commands::r#move::run(&root, &Some(file.clone()), &Some(from.clone()), &Some(to.clone()))?;
             Ok(serde_json::to_string_pretty(&json!({
                 "status": "ok",
                 "file": file,

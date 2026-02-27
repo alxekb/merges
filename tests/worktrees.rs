@@ -298,7 +298,7 @@ fn test_move_worktrees_does_not_switch_branch() {
     let (_dir, root) = make_repo();
     setup_worktree_chunks(&root);
 
-    merges::commands::r#move::run(&root, "src/b.rs", "part-b", "part-a").unwrap();
+    merges::commands::r#move::run(&root, &Some("src/b.rs".to_string()), &Some("part-b".to_string()), &Some("part-a".to_string())).unwrap();
 
     let branch = merges::git::current_branch(&root).unwrap();
     assert_eq!(branch, "feat/big",
@@ -311,7 +311,7 @@ fn test_move_worktrees_removes_from_source_worktree() {
     let (_dir, root) = make_repo();
     setup_worktree_chunks(&root);
 
-    merges::commands::r#move::run(&root, "src/b.rs", "part-b", "part-a").unwrap();
+    merges::commands::r#move::run(&root, &Some("src/b.rs".to_string()), &Some("part-b".to_string()), &Some("part-a".to_string())).unwrap();
 
     let wt_b = merges::git::worktree_path(&root, "feat/big-chunk-2-part-b");
     let files = merges::git::changed_files(&wt_b, "main").unwrap();
@@ -325,7 +325,7 @@ fn test_move_worktrees_adds_to_dest_worktree() {
     let (_dir, root) = make_repo();
     setup_worktree_chunks(&root);
 
-    merges::commands::r#move::run(&root, "src/b.rs", "part-b", "part-a").unwrap();
+    merges::commands::r#move::run(&root, &Some("src/b.rs".to_string()), &Some("part-b".to_string()), &Some("part-a".to_string())).unwrap();
 
     let wt_a = merges::git::worktree_path(&root, "feat/big-chunk-1-part-a");
     let mut files = merges::git::changed_files(&wt_a, "main").unwrap();
