@@ -59,9 +59,31 @@ pub async fn run() -> Result<()> {
             (pr_text, "—".to_string(), "—".to_string())
         };
 
-        let behind = git::commits_behind(&root, &chunk.branch, &state.base_branch).unwrap_or(0);
-        let sync_label = git::sync_status(behind);
-        let sync_color = if behind == 0 { Color::Green } else { Color::Yellow };
+        // Check local branch existence
+        let branch_exists = git::branch_exists(&root, &chunk.branch).unwrap_or(false);
+        let branch_cell = if branch_exists {
+            chunk.branch.cyan()
+        } else {
+            format!("{} (deleted)", chunk.branch).red()
+        };
+
+        let behind = if branch_exists {
+            git::commits_behind(&root, &chunk.branch, &state.base_branch).unwrap_or(0)
+        } else {
+            0
+        };
+        let sync_label = if branch_exists {
+            git::sync_status(behind)
+        } else {
+            "—".to_string()
+        };
+        let sync_color = if !branch_exists {
+            Color::Reset
+        } else if behind == 0 {
+            Color::Green
+        } else {
+            Color::Yellow
+        };
 
         let pr_color = if pr_cell.contains("(merged)") {
             Color::Green
@@ -87,7 +109,7 @@ pub async fn run() -> Result<()> {
         table.add_row(vec![
             Cell::new(i + 1),
             Cell::new(&chunk.name),
-            Cell::new(&chunk.branch).fg(Color::Cyan),
+            Cell::new(branch_cell),
             Cell::new(&sync_label).fg(sync_color),
             Cell::new(&pr_cell).fg(pr_color),
             Cell::new(&ci_cell).fg(ci_color),

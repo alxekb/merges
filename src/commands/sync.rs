@@ -13,17 +13,26 @@ pub fn run() -> Result<()> {
         return Ok(());
     }
 
+    let active_chunks: Vec<_> = state.chunks.iter()
+        .filter(|c| c.status == crate::state::ChunkStatus::Pending)
+        .collect();
+
+    if active_chunks.is_empty() {
+        println!("No active chunks to sync.");
+        return Ok(());
+    }
+
     let current = git::current_branch(&root)?;
 
     println!(
         "{} Syncing {} chunk branch(es) onto '{}'{}",
         "→".blue().bold(),
-        state.chunks.len().to_string().yellow(),
+        active_chunks.len().to_string().yellow(),
         state.base_branch.cyan(),
         if state.use_worktrees { " (parallel)" } else { "" }
     );
 
-    let pb = ProgressBar::new(state.chunks.len() as u64);
+    let pb = ProgressBar::new(active_chunks.len() as u64);
     pb.set_style(
         ProgressStyle::default_bar()
             .template("{bar:40.cyan/blue} {pos}/{len} {msg}")
@@ -37,7 +46,7 @@ pub fn run() -> Result<()> {
         let pb = Arc::new(pb);
 
         std::thread::scope(|s| {
-            for chunk in &state.chunks {
+            for chunk in &active_chunks {
                 let wt = git::worktree_path(&root, &chunk.branch);
                 let base = state.base_branch.clone();
                 let strategy = state.strategy.clone();
@@ -66,7 +75,7 @@ pub fn run() -> Result<()> {
         }
     } else {
         // Classic mode: sequential, requires branch checkout
-        for chunk in &state.chunks {
+        for chunk in &active_chunks {
             pb.set_message(format!("rebasing '{}'…", chunk.branch));
             git::checkout(&root, &chunk.branch)?;
             match state.strategy {

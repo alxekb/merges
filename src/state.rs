@@ -20,6 +20,20 @@ impl std::fmt::Display for Strategy {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum ChunkStatus {
+    Pending,
+    Merged,
+    Closed,
+}
+
+impl Default for ChunkStatus {
+    fn default() -> Self {
+        Self::Pending
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Chunk {
     pub name: String,
@@ -29,6 +43,8 @@ pub struct Chunk {
     pub pr_number: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pr_url: Option<String>,
+    #[serde(default)]
+    pub status: ChunkStatus,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -92,6 +108,7 @@ mod tests {
             files: vec!["src/models/user.rs".to_string()],
             pr_number: None,
             pr_url: None,
+            status: ChunkStatus::Pending,
         }
     }
 
@@ -102,6 +119,7 @@ mod tests {
             files: vec!["src/api/routes.rs".to_string(), "src/api/handlers.rs".to_string()],
             pr_number: Some(42),
             pr_url: Some("https://github.com/acme/myrepo/pull/42".to_string()),
+            status: ChunkStatus::Pending,
         }
     }
 

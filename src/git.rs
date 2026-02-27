@@ -49,6 +49,19 @@ pub fn changed_files(root: &Path, base_branch: &str) -> Result<Vec<String>> {
     Ok(files)
 }
 
+/// Check if a local branch exists.
+pub fn branch_exists(root: &Path, branch_name: &str) -> Result<bool> {
+    let repo = Repository::open(root)?;
+    let branches = repo.branches(Some(git2::BranchType::Local))?;
+    for branch in branches {
+        let (branch, _) = branch?;
+        if branch.name()?.is_some_and(|n| n == branch_name) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 /// Create a new branch pointing at `base_ref` (e.g. the merge-base with main).
 pub fn create_branch(root: &Path, branch_name: &str, base_ref: &str) -> Result<()> {
     let status = Command::new("git")

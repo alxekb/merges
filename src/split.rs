@@ -229,6 +229,7 @@ pub fn apply_plan(root: &std::path::Path, plan: Vec<ChunkPlan>) -> Result<()> {
                 files: chunk_plan.files.clone(),
                 pr_number: None,
                 pr_url: None,
+                status: crate::state::ChunkStatus::Pending,
             });
         }
         Ok(new_chunks)
