@@ -18,6 +18,7 @@ pub struct PrInfo {
     pub title: String,
     pub state: String,
     pub is_merged: bool,
+    pub body: String, // Add this field
     pub ci_status: String,
     pub review_state: String,
 }
@@ -55,7 +56,7 @@ pub async fn find_pr_for_branch(
     owner: &str,
     repo: &str,
     head: &str,
-) -> Result<Option<(u64, String)>> {
+) -> Result<Option<PrInfo>> {
     let pulls = client
         .pulls(owner, repo)
         .list()
@@ -67,13 +68,7 @@ pub async fn find_pr_for_branch(
         .context("Failed to list PRs for branch")?;
 
     if let Some(pr) = pulls.items.first() {
-        let number = pr.number;
-        let url = pr
-            .html_url
-            .as_ref()
-            .map(|u| u.to_string())
-            .unwrap_or_else(|| format!("https://github.com/{}/{}/pull/{}", owner, repo, number));
-        Ok(Some((number, url)))
+        get_pr_info(client, owner, repo, pr.number).await.map(Some)
     } else {
         Ok(None)
     }
@@ -125,7 +120,7 @@ pub async fn get_pr_info(
         .unwrap_or_else(|| format!("https://github.com/{}/{}/pull/{}", owner, repo, pr_number));
 
     let title = pr.title.unwrap_or_default();
-
+    let body = pr.body.unwrap_or_default();
     let is_merged = pr.merged_at.is_some();
 
     // Fetch combined commit status
@@ -138,6 +133,7 @@ pub async fn get_pr_info(
         title,
         state,
         is_merged,
+        body,
         ci_status,
         review_state,
     })
