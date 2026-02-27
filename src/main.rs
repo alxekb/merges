@@ -98,7 +98,7 @@ enum Commands {
         files: Vec<String>,
     },
 
-    /// Move a file from one chunk to another
+    /// Move a file from one chunk to another (interactive by default)
     Move {
         /// File to move (relative path)
         file: Option<String>,
