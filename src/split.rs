@@ -126,27 +126,29 @@ pub fn apply_touch_plan(root: &std::path::Path, plan: Vec<ChunkPlan>) -> Result<
     let changed = git::changed_files(root, &base_branch)?;
 
     // 1. All files must be in the diff
+    let changed_set: std::collections::HashSet<String> = changed.into_iter().map(|c| crate::git::normalise_git_path(&c)).collect();
     for chunk in &plan {
         for file in &chunk.files {
-            if !changed.contains(file) {
+            if !changed_set.contains(&crate::git::normalise_git_path(file)) {
                 bail!(
                     "File '{}' in chunk '{}' is not in the diff between '{}' and HEAD. \nChanged files are: {:?}",
                     file,
                     chunk.name,
                     base_branch,
-                    changed
+                    changed_set
                 );
             }
         }
     }
 
     // 2. No file already assigned to an existing chunk
-    let already_assigned: Vec<&str> = state.chunks.iter()
-        .flat_map(|c| c.files.iter().map(|f| f.as_str()))
+    let already_assigned_set: std::collections::HashSet<String> = state.chunks.iter()
+        .flat_map(|c| c.files.iter().cloned())
+        .map(|f| crate::git::normalise_git_path(&f))
         .collect();
     for chunk in &plan {
         for file in &chunk.files {
-            if already_assigned.contains(&file.as_str()) {
+            if already_assigned_set.contains(&crate::git::normalise_git_path(file)) {
                 bail!(
                     "File '{}' is already assigned to an existing chunk. Use `merges move` to reassign it.",
                     file
@@ -159,7 +161,8 @@ pub fn apply_touch_plan(root: &std::path::Path, plan: Vec<ChunkPlan>) -> Result<
     let mut seen = std::collections::HashSet::new();
     for chunk in &plan {
         for file in &chunk.files {
-            if !seen.insert(file.as_str()) {
+            let norm = crate::git::normalise_git_path(file);
+            if !seen.insert(norm) {
                 bail!(
                     "File '{}' appears more than once across the chunk plan.",
                     file
@@ -274,31 +277,33 @@ pub fn apply_plan(root: &std::path::Path, plan: Vec<ChunkPlan>) -> Result<()> {
     let changed = git::changed_files(root, &base_branch)?;
 
     // 1. All files must be in the diff
+    // Normalise paths for robust comparisons (strip leading ./ etc.)
+    let changed_set: std::collections::HashSet<String> = changed.into_iter().map(|c| crate::git::normalise_git_path(&c)).collect();
+
     for chunk in &plan {
         for file in &chunk.files {
-            if !changed.contains(file) {
+            if !changed_set.contains(&crate::git::normalise_git_path(file)) {
                 bail!(
-                    "File '{}' in chunk '{}' is not in the diff between '{}' and HEAD. \
-                     Changed files are: {:?}",
+                    "File '{}' in chunk '{}' is not in the diff between '{}' and HEAD. \nChanged files are: {:?}",
                     file,
                     chunk.name,
                     base_branch,
-                    changed
+                    changed_set
                 );
             }
         }
     }
 
     // 2. No file already assigned to an existing chunk
-    let already_assigned: Vec<&str> = state.chunks.iter()
-        .flat_map(|c| c.files.iter().map(|f| f.as_str()))
+    let already_assigned_set: std::collections::HashSet<String> = state.chunks.iter()
+        .flat_map(|c| c.files.iter().cloned())
+        .map(|f| crate::git::normalise_git_path(&f))
         .collect();
     for chunk in &plan {
         for file in &chunk.files {
-            if already_assigned.contains(&file.as_str()) {
+            if already_assigned_set.contains(&crate::git::normalise_git_path(file)) {
                 bail!(
-                    "File '{}' is already assigned to an existing chunk. \
-                     Use `merges move` to reassign it.",
+                    "File '{}' is already assigned to an existing chunk. \nUse `merges move` to reassign it.",
                     file
                 );
             }
@@ -309,7 +314,8 @@ pub fn apply_plan(root: &std::path::Path, plan: Vec<ChunkPlan>) -> Result<()> {
     let mut seen = std::collections::HashSet::new();
     for chunk in &plan {
         for file in &chunk.files {
-            if !seen.insert(file.as_str()) {
+            let norm = crate::git::normalise_git_path(file);
+            if !seen.insert(norm) {
                 bail!(
                     "File '{}' appears more than once across the chunk plan.",
                     file

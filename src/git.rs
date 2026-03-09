@@ -3,6 +3,21 @@ use git2::Repository;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+/// Normalise file path strings returned by git or provided in chunk plans.
+/// - Strips leading "./"
+/// - On Windows, converts backslashes to forward slashes
+pub fn normalise_git_path(p: &str) -> String {
+    let mut s = p.trim().to_string();
+    if s.starts_with("./") {
+        s = s[2..].to_string();
+    }
+    #[cfg(windows)]
+    {
+        s = s.replace("\\", "/");
+    }
+    s
+}
+
 /// Find the git repository root from the current directory.
 pub fn repo_root() -> Result<PathBuf> {
     let repo = Repository::discover(".")
@@ -25,6 +40,26 @@ pub fn current_branch(root: &Path) -> Result<String> {
 pub fn changed_files(root: &Path, base_branch: &str) -> Result<Vec<String>> {
     use std::collections::BTreeSet;
 
+    // Helper to normalise paths returned by git (strip leading ./, unify separators)
+    fn normalise(p: &str) -> String {
+        normalise_git_path(p)
+    }
+
+/// Normalise file path strings returned by git or provided in chunk plans.
+/// - Strips leading "./"
+/// - On Windows, converts backslashes to forward slashes
+pub fn normalise_git_path(p: &str) -> String {
+    let mut s = p.trim().to_string();
+    if s.starts_with("./") {
+        s = s[2..].to_string();
+    }
+    #[cfg(windows)]
+    {
+        s = s.replace("\\", "/");
+    }
+    s
+}
+
     // 1) Files changed between the base branch and HEAD (committed changes)
     let committed = Command::new("git")
         .args([
@@ -44,7 +79,7 @@ pub fn changed_files(root: &Path, base_branch: &str) -> Result<Vec<String>> {
 
     let mut set: BTreeSet<String> = String::from_utf8_lossy(&committed.stdout)
         .lines()
-        .map(|l| l.to_string())
+        .map(|l| normalise(l))
         .filter(|l| !l.is_empty())
         .collect();
 
@@ -56,7 +91,7 @@ pub fn changed_files(root: &Path, base_branch: &str) -> Result<Vec<String>> {
     if staged.status.success() {
         for l in String::from_utf8_lossy(&staged.stdout).lines() {
             if !l.is_empty() {
-                set.insert(l.to_string());
+                set.insert(normalise(l));
             }
         }
     }
@@ -69,7 +104,7 @@ pub fn changed_files(root: &Path, base_branch: &str) -> Result<Vec<String>> {
     if unstaged.status.success() {
         for l in String::from_utf8_lossy(&unstaged.stdout).lines() {
             if !l.is_empty() {
-                set.insert(l.to_string());
+                set.insert(normalise(l));
             }
         }
     }
@@ -82,7 +117,7 @@ pub fn changed_files(root: &Path, base_branch: &str) -> Result<Vec<String>> {
     if untracked.status.success() {
         for l in String::from_utf8_lossy(&untracked.stdout).lines() {
             if !l.is_empty() {
-                set.insert(l.to_string());
+                set.insert(normalise(l));
             }
         }
     }
