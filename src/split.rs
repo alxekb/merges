@@ -104,6 +104,143 @@ fn grouping_key(file: &str, use_second_level: bool) -> String {
     }
 }
 
+/// Apply a touch-style chunk plan: create branches/worktrees and touch (create empty)
+/// files instead of checking out their contents. This is used for scaffold-only PRs.
+pub fn apply_touch_plan(root: &std::path::Path, plan: Vec<ChunkPlan>) -> Result<()> {
+    if plan.is_empty() {
+        bail!("Chunk plan is empty — provide at least one chunk with files.");
+    }
+
+    let mut state = MergesState::load(root)?;
+    let source_branch = state.source_branch.clone();
+    let base_branch = state.base_branch.clone();
+    let effective_prefix = state
+        .commit_prefix
+        .clone()
+        .or_else(|| git::ticket_prefix(&source_branch))
+        .unwrap_or_default();
+
+    git::ensure_gitignored(root, ".merges.json")?;
+
+    // Validate ALL files upfront before touching any branches
+    let changed = git::changed_files(root, &base_branch)?;
+
+    // 1. All files must be in the diff
+    for chunk in &plan {
+        for file in &chunk.files {
+            if !changed.contains(file) {
+                bail!(
+                    "File '{}' in chunk '{}' is not in the diff between '{}' and HEAD. \nChanged files are: {:?}",
+                    file,
+                    chunk.name,
+                    base_branch,
+                    changed
+                );
+            }
+        }
+    }
+
+    // 2. No file already assigned to an existing chunk
+    let already_assigned: Vec<&str> = state.chunks.iter()
+        .flat_map(|c| c.files.iter().map(|f| f.as_str()))
+        .collect();
+    for chunk in &plan {
+        for file in &chunk.files {
+            if already_assigned.contains(&file.as_str()) {
+                bail!(
+                    "File '{}' is already assigned to an existing chunk. Use `merges move` to reassign it.",
+                    file
+                );
+            }
+        }
+    }
+
+    // 3. No file duplicated within the plan itself
+    let mut seen = std::collections::HashSet::new();
+    for chunk in &plan {
+        for file in &chunk.files {
+            if !seen.insert(file.as_str()) {
+                bail!(
+                    "File '{}' appears more than once across the chunk plan.",
+                    file
+                );
+            }
+        }
+    }
+
+    let base_sha = git::merge_base(root, &base_branch)?;
+    let use_worktrees = state.use_worktrees;
+
+    // Track branches we create so we can roll them back on failure.
+    let mut created_branches: Vec<String> = Vec::new();
+
+    let result = (|| -> Result<Vec<Chunk>> {
+        let mut new_chunks = Vec::new();
+        for chunk_plan in &plan {
+            let n = state.chunks.len() + new_chunks.len() + 1;
+            let safe_name = chunk_plan.name.to_lowercase().replace(' ', "-");
+            let branch = format!("{}-chunk-{}-{}", source_branch, n, safe_name);
+
+            let work_dir: std::path::PathBuf = if use_worktrees {
+                git::add_worktree(root, &branch, &base_sha)?;
+                git::worktree_path(root, &branch)
+            } else {
+                git::create_branch(root, &branch, &base_sha)?;
+                root.to_path_buf()
+            };
+            created_branches.push(branch.clone());
+
+            // Touch files instead of checking out their contents
+            for file in &chunk_plan.files {
+                let dest = work_dir.join(file);
+                if let Some(parent) = dest.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+                if !dest.exists() {
+                    std::fs::write(&dest, "")?;
+                }
+            }
+
+            let body = format!("chunk {} - {}\n\nFiles:\n{}", n, chunk_plan.name, chunk_plan.files.join("\n"));
+            let msg = git::commit_message(&source_branch, &body);
+            git::commit_all(&work_dir, &msg)?;
+
+            if !use_worktrees {
+                git::checkout(root, &source_branch)?;
+            }
+
+            new_chunks.push(Chunk {
+                name: chunk_plan.name.clone(),
+                branch: branch.clone(),
+                files: chunk_plan.files.clone(),
+                pr_number: None,
+                pr_url: None,
+                status: crate::state::ChunkStatus::Pending,
+            });
+        }
+        Ok(new_chunks)
+    })();
+
+    match result {
+        Ok(new_chunks) => {
+            state.chunks.extend(new_chunks);
+            state.save(root)?;
+            Ok(())
+        }
+        Err(e) => {
+            if !use_worktrees {
+                let _ = git::checkout(root, &source_branch);
+            }
+            for branch in &created_branches {
+                if use_worktrees {
+                    let _ = git::remove_worktree(root, branch);
+                }
+                let _ = git::delete_branch(root, branch);
+            }
+            Err(e)
+        }
+    }
+}
 /// Apply a pre-built chunk plan to the repository atomically:
 /// 1. Validates that all files in the plan are actually in the diff vs base.
 /// 2. For each chunk, creates a branch from the merge-base, cherry-picks files, commits.

@@ -160,8 +160,9 @@ fn run_interactive(
         return Ok(());
     }
 
-    // Apply all the interactively-defined chunks
-    crate::split::apply_plan(root, new_plans)?;
+    // Apply all the interactively-defined chunks using touch-style behavior
+    // by default: create scaffold-only branches with empty files (no file contents).
+    crate::split::apply_touch_plan(root, new_plans)?;
 
     let unassigned: Vec<_> = all_files.iter().filter(|f| !assigned.contains(f)).collect();
     if !unassigned.is_empty() {
