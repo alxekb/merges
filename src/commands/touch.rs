@@ -1,5 +1,6 @@
 use anyhow::{bail, Result};
 use serde_json;
+use colored::Colorize;
 
 use crate::{git, split::ChunkPlan, state::{Chunk, MergesState}};
 

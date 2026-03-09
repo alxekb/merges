@@ -23,8 +23,10 @@ pub fn current_branch(root: &Path) -> Result<String> {
 
 /// List files changed between `base_branch` and HEAD (working-tree aware).
 pub fn changed_files(root: &Path, base_branch: &str) -> Result<Vec<String>> {
-    // Use git diff --name-only for reliability across merge-base scenarios.
-    let output = Command::new("git")
+    use std::collections::BTreeSet;
+
+    // 1) Files changed between the base branch and HEAD (committed changes)
+    let committed = Command::new("git")
         .args([
             "-C",
             root.to_str().unwrap(),
@@ -33,20 +35,59 @@ pub fn changed_files(root: &Path, base_branch: &str) -> Result<Vec<String>> {
             &format!("{}...HEAD", base_branch),
         ])
         .output()
-        .context("Failed to run `git diff`")?;
+        .context("Failed to run `git diff` for committed changes")?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
+    if !committed.status.success() {
+        let stderr = String::from_utf8_lossy(&committed.stderr);
         bail!("git diff failed: {}", stderr);
     }
 
-    let files = String::from_utf8_lossy(&output.stdout)
+    let mut set: BTreeSet<String> = String::from_utf8_lossy(&committed.stdout)
         .lines()
         .map(|l| l.to_string())
         .filter(|l| !l.is_empty())
         .collect();
 
-    Ok(files)
+    // 2) Staged changes (index vs HEAD)
+    let staged = Command::new("git")
+        .args(["-C", root.to_str().unwrap(), "diff", "--name-only", "--cached"]) 
+        .output()
+        .context("Failed to run `git diff --cached` for staged changes")?;
+    if staged.status.success() {
+        for l in String::from_utf8_lossy(&staged.stdout).lines() {
+            if !l.is_empty() {
+                set.insert(l.to_string());
+            }
+        }
+    }
+
+    // 3) Working tree changes (unstaged)
+    let unstaged = Command::new("git")
+        .args(["-C", root.to_str().unwrap(), "diff", "--name-only"]) 
+        .output()
+        .context("Failed to run `git diff` for working-tree changes")?;
+    if unstaged.status.success() {
+        for l in String::from_utf8_lossy(&unstaged.stdout).lines() {
+            if !l.is_empty() {
+                set.insert(l.to_string());
+            }
+        }
+    }
+
+    // 4) Untracked files
+    let untracked = Command::new("git")
+        .args(["-C", root.to_str().unwrap(), "ls-files", "--others", "--exclude-standard"]) 
+        .output()
+        .context("Failed to run `git ls-files --others` for untracked files")?;
+    if untracked.status.success() {
+        for l in String::from_utf8_lossy(&untracked.stdout).lines() {
+            if !l.is_empty() {
+                set.insert(l.to_string());
+            }
+        }
+    }
+
+    Ok(set.into_iter().collect())
 }
 
 /// Check if a local branch exists.
@@ -719,6 +760,28 @@ mod tests {
 
         let files = changed_files(&root, "main").unwrap();
         assert_eq!(files, vec!["new_file.rs"]);
+    }
+
+    #[test]
+    fn test_changed_files_includes_staged_and_untracked() {
+        let (_dir, root) = make_repo();
+        StdCommand::new("git").args(["checkout", "-b", "feat/staged"]).current_dir(&root).output().unwrap();
+
+        // create a staged file (added but not committed)
+        std::fs::write(root.join("staged.txt"), "x").unwrap();
+        StdCommand::new("git").args(["add", "staged.txt"]).current_dir(&root).output().unwrap();
+
+        // create an unstaged modification
+        std::fs::write(root.join("README.md"), "modified").unwrap();
+
+        // create an untracked file
+        std::fs::write(root.join("untracked.txt"), "u").unwrap();
+
+        let mut files = changed_files(&root, "main").unwrap();
+        files.sort();
+        assert!(files.contains(&"staged.txt".to_string()));
+        assert!(files.contains(&"README.md".to_string()));
+        assert!(files.contains(&"untracked.txt".to_string()));
     }
 
     #[test]
