@@ -255,16 +255,14 @@ fn remove_files_from_branch(work_dir: &std::path::Path, files: &[String], source
     }
 
     for file in files {
+        // Remove the file from the index and working tree if present. Use --ignore-unmatch
+        // so callers can attempt to remove files that may already be absent.
         let status = std::process::Command::new("git")
-            .args(["-C", dir, "reset", "HEAD", "--", file])
+            .args(["-C", dir, "rm", "-f", "--ignore-unmatch", "--", file])
             .status()?;
         if !status.success() {
-            bail!("git reset HEAD -- {} failed", file);
+            bail!("git rm -f -- {} failed", file);
         }
-
-        let _ = std::process::Command::new("git")
-            .args(["-C", dir, "checkout", "--", file])
-            .status();
     }
 
     let out = std::process::Command::new("git")

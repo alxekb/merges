@@ -314,6 +314,7 @@ fn test_move_worktrees_removes_from_source_worktree() {
     merges::commands::r#move::run(&root, &["src/b.rs".to_string()], &Some("part-b".to_string()), &Some("part-a".to_string())).unwrap();
 
     let wt_b = merges::git::worktree_path(&root, "feat/big-chunk-2-part-b");
+    let wt_b = merges::git::worktree_path(&root, "feat/big-chunk-2-part-b");
     let files = merges::git::changed_files(&wt_b, "main").unwrap();
     assert!(!files.contains(&"src/b.rs".to_string()),
         "src/b.rs should be removed from part-b worktree diff");
