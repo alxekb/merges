@@ -224,6 +224,24 @@ If any branch creation fails mid-way, all partially created branches are rolled 
 
 ---
 
+### `merges touch`
+
+Create branches/worktrees and touch (create empty) files from a plan JSON, then commit them on the new branch. Useful to define project scaffolding and open an initial PR quickly.
+
+Usage (non-interactive):
+
+```bash
+merges touch --plan '[{"name":"scaffold","files":["src/a.rs","src/b.rs"]}]'
+```
+
+Behavior:
+
+- Creates a branch named `<source-branch>-chunk-<N>-<name>` at the merge-base with the base branch.
+- In worktree mode, creates a worktree for the branch; otherwise checks out the branch temporarily.
+- For each file in the plan, creates parent directories and an empty file if it doesn't exist.
+- Commits the touched files using the same commit message formatting as `merges split` (ticket prefix detection / commit_prefix is respected), ensuring compatibility with repo hooks.
+- On error, rolls back any created branches or worktrees.
+
 ### `merges push [--stacked | --independent]`
 
 ```

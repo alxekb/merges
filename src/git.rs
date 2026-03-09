@@ -381,7 +381,10 @@ pub fn remove_worktree(root: &Path, branch_name: &str) -> Result<()> {
 /// This keeps `.merges.json` from appearing in diffs or blocking branch checkouts,
 /// without polluting the project's `.gitignore`.
 pub fn ensure_gitignored(root: &Path, pattern: &str) -> Result<()> {
-    let git_dir = git_dir(root)?;
+    // Use the common git directory so this works even when the working tree's
+    // .git is a file (e.g., when the repo is a worktree). `git rev-parse --git-common-dir`
+    // yields the path to the shared git administrative directory.
+    let git_dir = common_git_dir(root)?;
     let info_dir = git_dir.join("info");
     std::fs::create_dir_all(&info_dir)?;
     let exclude = info_dir.join("exclude");
@@ -917,6 +920,25 @@ mod tests {
         let content = std::fs::read_to_string(info.join("exclude")).unwrap();
         assert!(content.contains("*.log"), "Existing rules should be preserved");
         assert!(content.contains(".merges.json"), "New pattern should be appended");
+    }
+
+    #[test]
+    fn test_ensure_gitignored_with_gitdir_file() {
+        let (_dir, root) = make_repo();
+        let git = root.join(".git");
+        let real_git = root.join("real_git");
+        // Move the actual .git directory to a different location to simulate
+        // a worktree-like setup where .git is a file pointing to the real git dir.
+        std::fs::rename(&git, &real_git).unwrap();
+        // Create a gitdir file pointing at the real git dir
+        std::fs::write(&git, format!("gitdir: {}\n", real_git.to_str().unwrap())).unwrap();
+
+        // Ensure our helper still writes into the real git info/exclude
+        ensure_gitignored(&root, ".merges.json").unwrap();
+        let exclude = real_git.join("info/exclude");
+        assert!(exclude.exists(), "exclude should be created inside the real git dir");
+        let content = std::fs::read_to_string(exclude).unwrap();
+        assert!(content.contains(".merges.json"));
     }
 
     // ── merge_base ────────────────────────────────────────────────────────
