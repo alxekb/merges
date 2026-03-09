@@ -472,6 +472,30 @@ The LLM calls `merges_split` without a plan first to see what files exist, then 
 
 ---
 
+## Troubleshooting
+
+### Branch already checked out in a worktree
+
+If you're running `merges` in classic mode (i.e., not using `--worktrees`) and you manually check out a chunk's branch into a separate `git worktree`, `merges` will report an error when trying to operate on that branch:
+
+```
+Error: Failed to checkout branch 'JCLARK-97246-poc-chunk-2-lib/data'
+
+Caused by:
+  Branch 'JCLARK-97246-poc-chunk-2-lib/data' is already used by a worktree at:
+    /Users/you/dev/myrepo/worktrees/JCLARK-97246-poc-chunk-2-lib/data
+
+  Please remove the worktree before running this command:
+  git worktree remove /Users/you/dev/myrepo/worktrees/JCLARK-97246-poc-chunk-2-lib/data
+```
+
+**Solution:**
+If you no longer need the separate worktree, remove it using the `git worktree remove` command provided in the error message.
+
+Alternatively, consider using `merges`' built-in [Worktree mode](#worktree-mode) (`merges init --worktrees`) to avoid this class of issues entirely. This allows `merges` to manage isolated working directories for each chunk, preventing conflicts with manual worktree operations.
+
+---
+
 ## Daily workflow
 
 ```

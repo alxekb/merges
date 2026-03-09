@@ -22,9 +22,7 @@ pub fn run() -> Result<()> {
         return Ok(());
     }
 
-    let current = git::current_branch(&root)?;
-
-    println!(
+    println! (
         "{} Syncing {} chunk branch(es) onto '{}'{}",
         "→".blue().bold(),
         active_chunks.len().to_string().yellow(),
@@ -85,7 +83,7 @@ pub fn run() -> Result<()> {
             pb.inc(1);
         }
         pb.finish_with_message("done");
-        git::checkout(&root, &current)?;
+        git::checkout(&root, &state.source_branch)?;
     }
 
     println!("{} All chunks are up to date with '{}'.", "✓".green().bold(), state.base_branch.cyan());

@@ -58,6 +58,13 @@ enum Commands {
         auto: bool,
     },
 
+    /// Create branches and touch files (create empty files and commit)
+    Touch {
+        /// JSON chunk plan: '[{"name":"models","files":["src/models/user.rs"]}]'
+        #[arg(long, value_name = "JSON")]
+        plan: Option<String>,
+    },
+
     /// Push chunk branches and create/update GitHub PRs
     Push {
         /// Use stacked PR strategy (each PR targets the previous chunk's branch)
@@ -136,6 +143,7 @@ async fn main() -> Result<()> {
     match cli.command {
         Commands::Init { base, worktrees, commit_prefix } => commands::init::run(base, worktrees, commit_prefix)?,
         Commands::Split { plan, auto } => commands::split::run(plan, auto)?,
+        Commands::Touch { plan } => commands::touch::run(plan)?,
         Commands::Push { stacked, independent } => commands::push::run(stacked, independent).await?,
         Commands::Sync => commands::sync::run()?,
         Commands::Status => commands::status::run().await?,
