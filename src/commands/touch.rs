@@ -9,6 +9,38 @@ pub fn run(plan_json: Option<String>) -> Result<()> {
     let root = git::repo_root()?;
     let mut state = MergesState::load(&root)?;
 
+    // Interactive mode when no --plan is provided: allow user to pick files
+    // and create scaffold-only chunk branches (touch only). This is the default
+    // behavior for interactive workflows.
+    if plan_json.is_none() {
+        use crate::ui;
+        use dialoguer::Input;
+
+        let all_files = git::changed_files(&root, &state.base_branch)?;
+        if all_files.is_empty() {
+            bail!("No changed files found between HEAD and '{}'", state.base_branch);
+        }
+
+        println!("{} Found {} changed file(s)", "→".blue().bold(), all_files.len());
+
+        let selected = ui::select_files("Select files to touch", &all_files)?;
+        if selected.is_empty() {
+            println!("{} No files selected — nothing to do.", "!".yellow().bold());
+            return Ok(());
+        }
+
+        let chunk_name: String = Input::new()
+            .with_prompt("Chunk name for touched files")
+            .interact_text()?;
+
+        let plan = vec![ChunkPlan { name: chunk_name, files: selected }];
+        // Delegate to split's touch-style applicator
+        crate::split::apply_touch_plan(&root, plan)?;
+        let state = MergesState::load(&root)?;
+        println!("{} Created {} chunk(s). Run {} to push.", "✓".green().bold(), state.chunks.len().to_string().yellow(), "merges push".bold());
+        return Ok(());
+    }
+
     let json = plan_json.ok_or_else(|| anyhow::anyhow!("Provide --plan JSON for `merges touch`"))?;
     let plan: Vec<ChunkPlan> = serde_json::from_str(&json)
         .map_err(|e| anyhow::anyhow!("Invalid --plan JSON: {}", e))?;
