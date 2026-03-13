@@ -137,6 +137,12 @@ fn test_apply_plan_chunk_branches_contain_correct_files() {
         "models chunk should only contain model files, got: {:?}",
         files
     );
+
+    // Verify file contents are preserved
+    let user_rs = std::fs::read_to_string(root.join("src/models/user.rs")).unwrap();
+    assert_eq!(user_rs, "struct User;", "File content should be preserved in chunk branch");
+    let post_rs = std::fs::read_to_string(root.join("src/models/post.rs")).unwrap();
+    assert_eq!(post_rs, "struct Post;", "File content should be preserved in chunk branch");
 }
 
 #[test]

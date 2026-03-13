@@ -205,7 +205,11 @@ pub fn apply_touch_plan(root: &std::path::Path, plan: Vec<ChunkPlan>) -> Result<
             }
 
             let body = format!("chunk {} - {}\n\nFiles:\n{}", n, chunk_plan.name, chunk_plan.files.join("\n"));
-            let msg = git::commit_message(&source_branch, &body);
+            let msg = if effective_prefix.is_empty() {
+                body
+            } else {
+                format!("{} {}", effective_prefix, body)
+            };
             git::commit_all(&work_dir, &msg)?;
 
             if !use_worktrees {
