@@ -79,7 +79,7 @@ fn test_mcp_doctor_returns_json_report() {
     let (_dir, root) = make_repo_with_two_chunks();
     std::env::set_current_dir(&root).unwrap();
 
-    let result = merges::mcp::call_tool_sync("merges_doctor", &serde_json::json!({}));
+    let result = merges::mcp::call_tool_sync("merges_doctor", &serde_json::json!({"__cwd": root.to_str().unwrap()}));
     assert!(result.is_ok(), "merges_doctor should not error: {:?}", result);
 
     let text = result.unwrap();
@@ -94,7 +94,7 @@ fn test_mcp_doctor_repair_flag_accepted() {
     let (_dir, root) = make_repo_with_two_chunks();
     std::env::set_current_dir(&root).unwrap();
 
-    let result = merges::mcp::call_tool_sync("merges_doctor", &serde_json::json!({"repair": true}));
+    let result = merges::mcp::call_tool_sync("merges_doctor", &serde_json::json!({"repair": true, "__cwd": root.to_str().unwrap()}));
     assert!(result.is_ok(), "merges_doctor repair should not error: {:?}", result);
 }
 
@@ -106,7 +106,7 @@ fn test_mcp_clean_dry_run_returns_branch_list() {
     let (_dir, root) = make_repo_with_two_chunks();
     std::env::set_current_dir(&root).unwrap();
 
-    let result = merges::mcp::call_tool_sync("merges_clean", &serde_json::json!({"dry_run": true}));
+    let result = merges::mcp::call_tool_sync("merges_clean", &serde_json::json!({"dry_run": true, "__cwd": root.to_str().unwrap()}));
     assert!(result.is_ok(), "merges_clean dry_run should not error: {:?}", result);
 
     let text = result.unwrap();
@@ -125,7 +125,7 @@ fn test_mcp_add_unknown_chunk_returns_error_not_unknown_tool() {
 
     let result = merges::mcp::call_tool_sync(
         "merges_add",
-        &serde_json::json!({"chunk": "no-such-chunk", "files": ["src/models/user.rs"]}),
+        &serde_json::json!({"chunk": "no-such-chunk", "files": ["src/models/user.rs"], "__cwd": root.to_str().unwrap()}),
     );
     // Should error with a domain error (chunk not found), not "Unknown tool"
     let err_msg = result.unwrap_err().to_string();
@@ -148,7 +148,8 @@ fn test_mcp_move_unknown_chunk_returns_error_not_unknown_tool() {
         &serde_json::json!({
             "file": "src/models/user.rs",
             "from": "no-such-chunk",
-            "to": "api"
+            "to": "api",
+            "__cwd": root.to_str().unwrap()
         }),
     );
     let err_msg = result.unwrap_err().to_string();
@@ -166,7 +167,7 @@ fn test_mcp_status_includes_sync_info() {
     let (_dir, root) = make_repo_with_two_chunks();
     std::env::set_current_dir(&root).unwrap();
 
-    let result = merges::mcp::call_tool_sync("merges_status", &serde_json::json!({}));
+    let result = merges::mcp::call_tool_sync("merges_status", &serde_json::json!({"__cwd": root.to_str().unwrap()}));
     assert!(result.is_ok(), "merges_status should not error: {:?}", result);
 
     let text = result.unwrap();
