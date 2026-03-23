@@ -133,18 +133,26 @@ fn run_interactive(
         let selected_files = ui::select_files("Select files", &remaining)?;
 
         if selected_files.is_empty() {
-            let stop = Confirm::new()
-                .with_prompt("No files selected — stop assigning chunks?")
+            let create_empty = Confirm::new()
+                .with_prompt("No files selected — create an empty chunk?")
                 .default(false)
                 .interact()?;
-            if stop {
-                break;
+            if create_empty {
+                new_plans.push(ChunkPlan { name: chunk_name.clone(), files: vec![] });
+            } else {
+                let stop = Confirm::new()
+                    .with_prompt("No files selected — stop assigning chunks?")
+                    .default(false)
+                    .interact()?;
+                if stop {
+                    break;
+                }
+                continue;
             }
-            continue;
+        } else {
+            assigned.extend(selected_files.clone());
+            new_plans.push(ChunkPlan { name: chunk_name, files: selected_files });
         }
-
-        assigned.extend(selected_files.clone());
-        new_plans.push(ChunkPlan { name: chunk_name, files: selected_files });
 
         let more = Confirm::new()
             .with_prompt("Add another chunk?")

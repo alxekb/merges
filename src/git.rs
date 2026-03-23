@@ -231,10 +231,13 @@ pub fn merge_base(root: &Path, base_branch: &str) -> Result<String> {
 /// Cherry-pick (copy) specific files from `source_branch` into the current branch
 /// by checking out those files from `source_branch` and committing.
 pub fn checkout_files_from(root: &Path, source_branch: &str, files: &[String]) -> Result<()> {
+    use std::fs;
+
     if files.is_empty() {
         return Ok(());
     }
 
+    // First attempt: try checking out the files directly into the target worktree.
     let mut args = vec![
         "-C".to_string(),
         root.to_str().unwrap().to_string(),
@@ -244,14 +247,78 @@ pub fn checkout_files_from(root: &Path, source_branch: &str, files: &[String]) -
     ];
     args.extend(files.iter().cloned());
 
-    let status = Command::new("git")
-        .args(&args)
-        .status()
-        .context("Failed to checkout files from source branch")?;
-
-    if !status.success() {
-        bail!("Failed to checkout files from '{}'", source_branch);
+    let status = Command::new("git").args(&args).status();
+    match status {
+        Ok(s) if s.success() => return Ok(()),
+        _ => {
+            // Fallback: some files may be new/untracked on the source branch. For those,
+            // copy their working-tree contents from the repo root into the worktree and add them.
+        }
     }
+
+    // Determine the repository root (the main working tree) so we can copy files that
+    // don't exist in the source branch's tree.
+    let repo_root = repo_root()?;
+
+    let mut present: Vec<String> = Vec::new();
+    let mut missing: Vec<String> = Vec::new();
+
+    for f in files {
+        // Use `git cat-file -e <branch>:<path>` to check whether the path exists in the
+        // source branch's tree.
+        let check_arg = format!("{}:{}", source_branch, f);
+        let check = Command::new("git")
+            .args(["-C", repo_root.to_str().unwrap(), "cat-file", "-e", &check_arg])
+            .status();
+        if let Ok(s) = check {
+            if s.success() {
+                present.push(f.clone());
+                continue;
+            }
+        }
+        missing.push(f.clone());
+    }
+
+    // Checkout files that are present in the source branch.
+    if !present.is_empty() {
+        let mut args = vec![
+            "-C".to_string(),
+            root.to_str().unwrap().to_string(),
+            "checkout".to_string(),
+            source_branch.to_string(),
+            "--".to_string(),
+        ];
+        args.extend(present.iter().cloned());
+        let st = Command::new("git").args(&args).status()?;
+        if !st.success() {
+            bail!("git checkout of files from '{}' failed", source_branch);
+        }
+    }
+
+    // For files missing from the source branch, copy them from the main working tree
+    // into the worktree and stage them there.
+    if !missing.is_empty() {
+        let mut copied: Vec<String> = Vec::new();
+        for f in &missing {
+            let src = repo_root.join(f);
+            let dst = root.join(f);
+            if let Some(parent) = dst.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::copy(&src, &dst)
+                .with_context(|| format!("Failed to copy '{}' into worktree", f))?;
+            copied.push(f.clone());
+        }
+
+        // Stage the copied files in the worktree.
+        let mut add_args = vec!["-C".to_string(), root.to_str().unwrap().to_string(), "add".to_string()];
+        add_args.extend(copied.iter().cloned());
+        let add_status = Command::new("git").args(&add_args).status()?;
+        if !add_status.success() {
+            bail!("git add failed in worktree");
+        }
+    }
+
     Ok(())
 }
 
