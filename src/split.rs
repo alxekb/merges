@@ -363,7 +363,21 @@ pub fn apply_plan(root: &std::path::Path, plan: Vec<ChunkPlan>) -> Result<()> {
             } else {
                 format!("{} {}", effective_prefix, body)
             };
-            git::commit_all(&work_dir, &msg)?;
+
+            // Commit changes in the worktree. If there is nothing to commit (e.g. an
+            // empty chunk with no files), treat that as success so users can create
+            // branches ahead of moving files into them.
+            match git::commit_all(&work_dir, &msg) {
+                Ok(()) => {}
+                Err(e) => {
+                    let detail = format!("{}", e);
+                    if detail.contains("nothing to commit") || detail.contains("working tree clean") {
+                        // allow empty commit
+                    } else {
+                        return Err(e);
+                    }
+                }
+            }
 
             // Classic mode: return to source branch after each chunk
             if !use_worktrees {

@@ -73,7 +73,15 @@ impl MergesState {
 
     pub fn save(&self, repo_root: &Path) -> Result<()> {
         let path = repo_root.join(STATE_FILE);
-        let content = serde_json::to_string_pretty(self)?;
+        // Serialize to a JSON Value so we can inject the repo_root (absolute path)
+        let mut value = serde_json::to_value(self)?;
+        if let serde_json::Value::Object(ref mut map) = value {
+            map.insert(
+                "repo_root".to_string(),
+                serde_json::Value::String(repo_root.display().to_string()),
+            );
+        }
+        let content = serde_json::to_string_pretty(&value)?;
         std::fs::write(&path, content)
             .with_context(|| format!("Failed to write {}", path.display()))
     }
@@ -311,6 +319,18 @@ mod tests {
         let raw = std::fs::read_to_string(dir.path().join(STATE_FILE)).unwrap();
         assert!(raw.contains('\n'), "Saved JSON should be pretty-printed with newlines");
         assert!(raw.contains("  "), "Saved JSON should be indented");
+    }
+
+    #[test]
+    fn test_save_includes_repo_root() {
+        let dir = TempDir::new().unwrap();
+        let state = sample_state();
+        state.save(dir.path()).unwrap();
+
+        let raw = std::fs::read_to_string(dir.path().join(STATE_FILE)).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        let repo_root = dir.path().to_str().unwrap();
+        assert_eq!(v.get("repo_root").and_then(|s| s.as_str()), Some(repo_root));
     }
 
     // ── commit_prefix field ────────────────────────────────────────────────

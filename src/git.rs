@@ -237,35 +237,25 @@ pub fn checkout_files_from(root: &Path, source_branch: &str, files: &[String]) -
         return Ok(());
     }
 
-    // First attempt: try checking out the files directly into the target worktree.
-    let mut args = vec![
-        "-C".to_string(),
-        root.to_str().unwrap().to_string(),
-        "checkout".to_string(),
-        source_branch.to_string(),
-        "--".to_string(),
-    ];
-    args.extend(files.iter().cloned());
-
-    let status = Command::new("git").args(&args).status();
-    match status {
-        Ok(s) if s.success() => return Ok(()),
-        _ => {
-            // Fallback: some files may be new/untracked on the source branch. For those,
-            // copy their working-tree contents from the repo root into the worktree and add them.
-        }
+    // Determine the repository top-level directory from the worktree root so we can
+    // reference files in the main working tree regardless of which worktree path
+    // we're operating in.
+    let repo_top_out = Command::new("git")
+        .args(["-C", root.to_str().unwrap(), "rev-parse", "--show-toplevel"]) 
+        .output()
+        .context("Failed to determine repository top-level")?;
+    if !repo_top_out.status.success() {
+        bail!("git rev-parse --show-toplevel failed");
     }
+    let repo_root = PathBuf::from(String::from_utf8_lossy(&repo_top_out.stdout).trim());
 
-    // Determine the repository root (the main working tree) so we can copy files that
-    // don't exist in the source branch's tree.
-    let repo_root = repo_root()?;
-
+    // Classify files as present in the source branch tree vs only present in the
+    // working tree (staged or untracked). Avoid running a bulk `git checkout` that
+    // would print fatal errors — check existence per-file first.
     let mut present: Vec<String> = Vec::new();
     let mut missing: Vec<String> = Vec::new();
 
     for f in files {
-        // Use `git cat-file -e <branch>:<path>` to check whether the path exists in the
-        // source branch's tree.
         let check_arg = format!("{}:{}", source_branch, f);
         let check = Command::new("git")
             .args(["-C", repo_root.to_str().unwrap(), "cat-file", "-e", &check_arg])
@@ -289,14 +279,16 @@ pub fn checkout_files_from(root: &Path, source_branch: &str, files: &[String]) -
             "--".to_string(),
         ];
         args.extend(present.iter().cloned());
-        let st = Command::new("git").args(&args).status()?;
-        if !st.success() {
-            bail!("git checkout of files from '{}' failed", source_branch);
+        let st = Command::new("git").args(&args).output()?;
+        if !st.status.success() {
+            let stderr = String::from_utf8_lossy(&st.stderr);
+            bail!("git checkout failed: {}", stderr.trim());
         }
     }
 
     // For files missing from the source branch, copy them from the main working tree
-    // into the worktree and stage them there.
+    // into the worktree and stage them there. Copying the file reads the current
+    // working-tree contents (including staged changes), which is what users expect.
     if !missing.is_empty() {
         let mut copied: Vec<String> = Vec::new();
         for f in &missing {
@@ -310,7 +302,6 @@ pub fn checkout_files_from(root: &Path, source_branch: &str, files: &[String]) -
             copied.push(f.clone());
         }
 
-        // Stage the copied files in the worktree.
         let mut add_args = vec!["-C".to_string(), root.to_str().unwrap().to_string(), "add".to_string()];
         add_args.extend(copied.iter().cloned());
         let add_status = Command::new("git").args(&add_args).status()?;
