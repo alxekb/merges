@@ -6,6 +6,7 @@ mod github;
 mod mcp;
 mod split;
 mod state;
+mod ui;
 
 use anyhow::Result;
 use clap::{CommandFactory, Parser, Subcommand};
@@ -57,6 +58,13 @@ enum Commands {
         auto: bool,
     },
 
+    /// Create branches and touch files (create empty files and commit)
+    Touch {
+        /// JSON chunk plan: '[{"name":"models","files":["src/models/user.rs"]}]'
+        #[arg(long, value_name = "JSON")]
+        plan: Option<String>,
+    },
+
     /// Push chunk branches and create/update GitHub PRs
     Push {
         /// Use stacked PR strategy (each PR targets the previous chunk's branch)
@@ -88,28 +96,29 @@ enum Commands {
         yes: bool,
     },
 
-    /// Add files to an existing chunk
+    /// Add files to an existing chunk (interactive by default)
     Add {
         /// Name of the chunk to add files to
-        chunk: String,
+        chunk: Option<String>,
 
         /// Files to add (relative paths)
-        #[arg(required = true)]
+        #[arg(required = false)]
         files: Vec<String>,
     },
 
-    /// Move a file from one chunk to another
+    /// Move files from one chunk to another (interactive by default)
     Move {
-        /// File to move (relative path)
-        file: String,
+        /// Files to move (relative paths)
+        #[arg(required = false)]
+        files: Vec<String>,
 
         /// Source chunk name
         #[arg(long = "from")]
-        from: String,
+        from: Option<String>,
 
         /// Destination chunk name
         #[arg(long = "to")]
-        to: String,
+        to: Option<String>,
     },
 
     /// Validate state consistency (branch existence, worktrees, gitignore)
@@ -134,6 +143,7 @@ async fn main() -> Result<()> {
     match cli.command {
         Commands::Init { base, worktrees, commit_prefix } => commands::init::run(base, worktrees, commit_prefix)?,
         Commands::Split { plan, auto } => commands::split::run(plan, auto)?,
+        Commands::Touch { plan } => commands::touch::run(plan)?,
         Commands::Push { stacked, independent } => commands::push::run(stacked, independent).await?,
         Commands::Sync => commands::sync::run()?,
         Commands::Status => commands::status::run().await?,
@@ -143,9 +153,9 @@ async fn main() -> Result<()> {
             let root = git::repo_root()?;
             commands::add::run(&root, &chunk, &files)?;
         }
-        Commands::Move { file, from, to } => {
+        Commands::Move { files, from, to } => {
             let root = git::repo_root()?;
-            commands::r#move::run(&root, &file, &from, &to)?;
+            commands::r#move::run(&root, &files, &from, &to)?;
         }
         Commands::Doctor { repair } => {
             let root = git::repo_root()?;

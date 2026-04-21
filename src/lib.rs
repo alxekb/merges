@@ -7,3 +7,4 @@ pub mod github;
 pub mod mcp;
 pub mod split;
 pub mod state;
+pub mod ui;

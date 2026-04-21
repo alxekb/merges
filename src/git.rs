@@ -3,6 +3,21 @@ use git2::Repository;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+/// Normalise file path strings returned by git or provided in chunk plans.
+/// - Strips leading "./"
+/// - On Windows, converts backslashes to forward slashes
+pub fn normalise_git_path(p: &str) -> String {
+    let mut s = p.trim().to_string();
+    if s.starts_with("./") {
+        s = s[2..].to_string();
+    }
+    #[cfg(windows)]
+    {
+        s = s.replace("\\", "/");
+    }
+    s
+}
+
 /// Find the git repository root from the current directory.
 pub fn repo_root() -> Result<PathBuf> {
     let repo = Repository::discover(".")
@@ -23,8 +38,30 @@ pub fn current_branch(root: &Path) -> Result<String> {
 
 /// List files changed between `base_branch` and HEAD (working-tree aware).
 pub fn changed_files(root: &Path, base_branch: &str) -> Result<Vec<String>> {
-    // Use git diff --name-only for reliability across merge-base scenarios.
-    let output = Command::new("git")
+    use std::collections::BTreeSet;
+
+    // Helper to normalise paths returned by git (strip leading ./, unify separators)
+    fn normalise(p: &str) -> String {
+        normalise_git_path(p)
+    }
+
+/// Normalise file path strings returned by git or provided in chunk plans.
+/// - Strips leading "./"
+/// - On Windows, converts backslashes to forward slashes
+pub fn normalise_git_path(p: &str) -> String {
+    let mut s = p.trim().to_string();
+    if s.starts_with("./") {
+        s = s[2..].to_string();
+    }
+    #[cfg(windows)]
+    {
+        s = s.replace("\\", "/");
+    }
+    s
+}
+
+    // 1) Files changed between the base branch and HEAD (committed changes)
+    let committed = Command::new("git")
         .args([
             "-C",
             root.to_str().unwrap(),
@@ -33,20 +70,72 @@ pub fn changed_files(root: &Path, base_branch: &str) -> Result<Vec<String>> {
             &format!("{}...HEAD", base_branch),
         ])
         .output()
-        .context("Failed to run `git diff`")?;
+        .context("Failed to run `git diff` for committed changes")?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
+    if !committed.status.success() {
+        let stderr = String::from_utf8_lossy(&committed.stderr);
         bail!("git diff failed: {}", stderr);
     }
 
-    let files = String::from_utf8_lossy(&output.stdout)
+    let mut set: BTreeSet<String> = String::from_utf8_lossy(&committed.stdout)
         .lines()
-        .map(|l| l.to_string())
+        .map(|l| normalise(l))
         .filter(|l| !l.is_empty())
         .collect();
 
-    Ok(files)
+    // 2) Staged changes (index vs HEAD)
+    let staged = Command::new("git")
+        .args(["-C", root.to_str().unwrap(), "diff", "--name-only", "--cached"]) 
+        .output()
+        .context("Failed to run `git diff --cached` for staged changes")?;
+    if staged.status.success() {
+        for l in String::from_utf8_lossy(&staged.stdout).lines() {
+            if !l.is_empty() {
+                set.insert(normalise(l));
+            }
+        }
+    }
+
+    // 3) Working tree changes (unstaged)
+    let unstaged = Command::new("git")
+        .args(["-C", root.to_str().unwrap(), "diff", "--name-only"]) 
+        .output()
+        .context("Failed to run `git diff` for working-tree changes")?;
+    if unstaged.status.success() {
+        for l in String::from_utf8_lossy(&unstaged.stdout).lines() {
+            if !l.is_empty() {
+                set.insert(normalise(l));
+            }
+        }
+    }
+
+    // 4) Untracked files
+    let untracked = Command::new("git")
+        .args(["-C", root.to_str().unwrap(), "ls-files", "--others", "--exclude-standard"]) 
+        .output()
+        .context("Failed to run `git ls-files --others` for untracked files")?;
+    if untracked.status.success() {
+        for l in String::from_utf8_lossy(&untracked.stdout).lines() {
+            if !l.is_empty() {
+                set.insert(normalise(l));
+            }
+        }
+    }
+
+    Ok(set.into_iter().collect())
+}
+
+/// Check if a local branch exists.
+pub fn branch_exists(root: &Path, branch_name: &str) -> Result<bool> {
+    let repo = Repository::open(root)?;
+    let branches = repo.branches(Some(git2::BranchType::Local))?;
+    for branch in branches {
+        let (branch, _) = branch?;
+        if branch.name()?.is_some_and(|n| n == branch_name) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 /// Create a new branch pointing at `base_ref` (e.g. the merge-base with main).
@@ -69,7 +158,8 @@ pub fn create_branch(root: &Path, branch_name: &str, base_ref: &str) -> Result<(
     Ok(())
 }
 
-/// Checkout an existing branch.
+/// Checkout an existing branch. If it's already checked out in another worktree, returns
+/// an error explaining where it is and how to fix it.
 pub fn checkout(root: &Path, branch_name: &str) -> Result<()> {
     let status = Command::new("git")
         .args(["-C", root.to_str().unwrap(), "checkout", branch_name])
@@ -77,6 +167,43 @@ pub fn checkout(root: &Path, branch_name: &str) -> Result<()> {
         .context("Failed to run `git checkout`")?;
 
     if !status.success() {
+        // Try to find if it's in a worktree to give a better error
+        let output = Command::new("git")
+            .args(["-C", root.to_str().unwrap(), "worktree", "list", "--porcelain"])
+            .output()?;
+        let stdout = String::from_utf8_lossy(&output.stdout);
+
+        let mut worktree_path = None;
+        let mut lines = stdout.lines();
+        while let Some(line) = lines.next() {
+            if line.starts_with("worktree ") {
+                let path = line.strip_prefix("worktree ").unwrap();
+                while let Some(next_line) = lines.next() {
+                    if next_line.is_empty() {
+                        break;
+                    }
+                    if next_line == format!("branch refs/heads/{}", branch_name) {
+                        worktree_path = Some(path.to_string());
+                        break;
+                    }
+                }
+            }
+            if worktree_path.is_some() {
+                break;
+            }
+        }
+
+        if let Some(path) = worktree_path {
+            bail!(
+                "Branch '{}' is already used by a worktree at:\n  {}\n\n\
+                Please remove the worktree before running this command:\n\
+                git worktree remove {}",
+                branch_name,
+                path,
+                path
+            );
+        }
+
         bail!("Failed to checkout branch '{}'", branch_name);
     }
     Ok(())
@@ -104,27 +231,85 @@ pub fn merge_base(root: &Path, base_branch: &str) -> Result<String> {
 /// Cherry-pick (copy) specific files from `source_branch` into the current branch
 /// by checking out those files from `source_branch` and committing.
 pub fn checkout_files_from(root: &Path, source_branch: &str, files: &[String]) -> Result<()> {
+    use std::fs;
+
     if files.is_empty() {
         return Ok(());
     }
 
-    let mut args = vec![
-        "-C".to_string(),
-        root.to_str().unwrap().to_string(),
-        "checkout".to_string(),
-        source_branch.to_string(),
-        "--".to_string(),
-    ];
-    args.extend(files.iter().cloned());
-
-    let status = Command::new("git")
-        .args(&args)
-        .status()
-        .context("Failed to checkout files from source branch")?;
-
-    if !status.success() {
-        bail!("Failed to checkout files from '{}'", source_branch);
+    // Determine the repository top-level directory from the worktree root so we can
+    // reference files in the main working tree regardless of which worktree path
+    // we're operating in.
+    let repo_top_out = Command::new("git")
+        .args(["-C", root.to_str().unwrap(), "rev-parse", "--show-toplevel"]) 
+        .output()
+        .context("Failed to determine repository top-level")?;
+    if !repo_top_out.status.success() {
+        bail!("git rev-parse --show-toplevel failed");
     }
+    let repo_root = PathBuf::from(String::from_utf8_lossy(&repo_top_out.stdout).trim());
+
+    // Classify files as present in the source branch tree vs only present in the
+    // working tree (staged or untracked). Avoid running a bulk `git checkout` that
+    // would print fatal errors — check existence per-file first.
+    let mut present: Vec<String> = Vec::new();
+    let mut missing: Vec<String> = Vec::new();
+
+    for f in files {
+        let check_arg = format!("{}:{}", source_branch, f);
+        let check = Command::new("git")
+            .args(["-C", repo_root.to_str().unwrap(), "cat-file", "-e", &check_arg])
+            .status();
+        if let Ok(s) = check {
+            if s.success() {
+                present.push(f.clone());
+                continue;
+            }
+        }
+        missing.push(f.clone());
+    }
+
+    // Checkout files that are present in the source branch.
+    if !present.is_empty() {
+        let mut args = vec![
+            "-C".to_string(),
+            root.to_str().unwrap().to_string(),
+            "checkout".to_string(),
+            source_branch.to_string(),
+            "--".to_string(),
+        ];
+        args.extend(present.iter().cloned());
+        let st = Command::new("git").args(&args).output()?;
+        if !st.status.success() {
+            let stderr = String::from_utf8_lossy(&st.stderr);
+            bail!("git checkout failed: {}", stderr.trim());
+        }
+    }
+
+    // For files missing from the source branch, copy them from the main working tree
+    // into the worktree and stage them there. Copying the file reads the current
+    // working-tree contents (including staged changes), which is what users expect.
+    if !missing.is_empty() {
+        let mut copied: Vec<String> = Vec::new();
+        for f in &missing {
+            let src = repo_root.join(f);
+            let dst = root.join(f);
+            if let Some(parent) = dst.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::copy(&src, &dst)
+                .with_context(|| format!("Failed to copy '{}' into worktree", f))?;
+            copied.push(f.clone());
+        }
+
+        let mut add_args = vec!["-C".to_string(), root.to_str().unwrap().to_string(), "add".to_string()];
+        add_args.extend(copied.iter().cloned());
+        let add_status = Command::new("git").args(&add_args).status()?;
+        if !add_status.success() {
+            bail!("git add failed in worktree");
+        }
+    }
+
     Ok(())
 }
 
@@ -169,7 +354,7 @@ pub fn fetch_and_rebase_stacked(root: &Path, base_branch: &str) -> Result<()> {
 
 fn fetch(root: &Path) -> Result<()> {
     let status = Command::new("git")
-        .args(["-C", root.to_str().unwrap(), "fetch", "origin"])
+        .args(["-C", root.to_str().unwrap(), "fetch", "--prune", "origin"])
         .status()
         .context("git fetch failed")?;
     if !status.success() {
@@ -237,19 +422,49 @@ pub fn delete_branch(root: &Path, branch_name: &str) -> Result<()> {
 
 // ── Worktree helpers ──────────────────────────────────────────────────────────
 
+/// Return the git administrative directory (e.g. `.git` or `.git/worktrees/name`).
+pub fn git_dir(root: &Path) -> Result<PathBuf> {
+    let repo = Repository::open(root)?;
+    Ok(repo.path().to_path_buf())
+}
+
+/// Return the common git administrative directory (e.g. `.git` even if in a worktree).
+pub fn common_git_dir(root: &Path) -> Result<PathBuf> {
+    let output = Command::new("git")
+        .args(["-C", root.to_str().unwrap(), "rev-parse", "--git-common-dir"])
+        .output()
+        .context("Failed to run `git rev-parse --git-common-dir`")?;
+
+    if !output.status.success() {
+        // Fallback to repo.path() if rev-parse fails
+        return git_dir(root);
+    }
+
+    let path_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let path = PathBuf::from(&path_str);
+    if path.is_absolute() {
+        Ok(path)
+    } else {
+        Ok(root.join(path))
+    }
+}
+
 /// Return the path where a worktree for `branch_name` will be created.
-/// Located at `.git/merges-worktrees/<sanitised-branch>` — inside `.git/`
+/// Located at `.git/merges-worktrees/<sanitised-branch>` — inside the common `.git/`
 /// so it is never tracked or shown in `git status`.
 pub fn worktree_path(root: &Path, branch_name: &str) -> PathBuf {
     let safe = branch_name.replace('/', "-");
-    root.join(".git").join("merges-worktrees").join(safe)
+    let base = common_git_dir(root).unwrap_or_else(|_| root.join(".git"));
+    base.join("merges-worktrees").join(safe)
 }
 
 /// Create a new branch `branch_name` at `base_ref` and add a worktree for it.
 /// The main worktree (and current branch) is untouched.
 pub fn add_worktree(root: &Path, branch_name: &str, base_ref: &str) -> Result<()> {
     let wt_path = worktree_path(root, branch_name);
-    std::fs::create_dir_all(wt_path.parent().unwrap())?;
+    if let Some(parent) = wt_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
 
     let status = Command::new("git")
         .args([
@@ -296,11 +511,14 @@ pub fn remove_worktree(root: &Path, branch_name: &str) -> Result<()> {
     Ok(())
 }
 
-/// Ensure `pattern` appears in `.git/info/exclude` (local gitignore, never committed).
+/// Ensure `pattern` appears in `info/exclude` (local gitignore, never committed).
 /// This keeps `.merges.json` from appearing in diffs or blocking branch checkouts,
 /// without polluting the project's `.gitignore`.
 pub fn ensure_gitignored(root: &Path, pattern: &str) -> Result<()> {
-    let git_dir = root.join(".git");
+    // Use the common git directory so this works even when the working tree's
+    // .git is a file (e.g., when the repo is a worktree). `git rev-parse --git-common-dir`
+    // yields the path to the shared git administrative directory.
+    let git_dir = common_git_dir(root)?;
     let info_dir = git_dir.join("info");
     std::fs::create_dir_all(&info_dir)?;
     let exclude = info_dir.join("exclude");
@@ -638,6 +856,28 @@ mod tests {
     }
 
     #[test]
+    fn test_changed_files_includes_staged_and_untracked() {
+        let (_dir, root) = make_repo();
+        StdCommand::new("git").args(["checkout", "-b", "feat/staged"]).current_dir(&root).output().unwrap();
+
+        // create a staged file (added but not committed)
+        std::fs::write(root.join("staged.txt"), "x").unwrap();
+        StdCommand::new("git").args(["add", "staged.txt"]).current_dir(&root).output().unwrap();
+
+        // create an unstaged modification
+        std::fs::write(root.join("README.md"), "modified").unwrap();
+
+        // create an untracked file
+        std::fs::write(root.join("untracked.txt"), "u").unwrap();
+
+        let mut files = changed_files(&root, "main").unwrap();
+        files.sort();
+        assert!(files.contains(&"staged.txt".to_string()));
+        assert!(files.contains(&"README.md".to_string()));
+        assert!(files.contains(&"untracked.txt".to_string()));
+    }
+
+    #[test]
     fn test_changed_files_detects_multiple_files() {
         let (_dir, root) = make_repo();
         StdCommand::new("git").args(["checkout", "-b", "feat/multi"]).current_dir(&root).output().unwrap();
@@ -719,6 +959,60 @@ mod tests {
         assert!(result.is_err());
     }
 
+    #[test]
+    fn test_checkout_branch_in_worktree_errors_with_message() {
+        let (_dir, root) = make_repo();
+        create_branch(&root, "feat/in-worktree", "HEAD").unwrap();
+
+        // Create a worktree for this branch
+        let git = git_dir(&root).unwrap();
+        let wt_path = git.join("worktrees").join("feat-in-worktree");
+        std::fs::create_dir_all(wt_path.parent().unwrap()).unwrap(); // ensure .git/worktrees exists
+        // Now try to checkout this branch in the main repo
+        // First, checkout to a different branch to make sure the branch is not on current branch
+        // so it can be used in a worktree.
+        checkout(&root, "main").unwrap();
+
+        let output = StdCommand::new("git")
+            .args([
+                "-C",
+                root.to_str().unwrap(),
+                "worktree",
+                "add",
+                wt_path.to_str().unwrap(),
+                "feat/in-worktree", // Use the existing branch
+            ])
+            .output()
+            .unwrap();
+        if !output.status.success() {
+            panic!("git worktree add failed: {}", String::from_utf8_lossy(&output.stderr));
+        }
+
+        let result = checkout(&root, "feat/in-worktree");
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(
+            msg.contains("Branch 'feat/in-worktree' is already used by a worktree at:"),
+            "Error message should contain worktree info, got: {}",
+            msg
+        );
+        assert!(msg.contains(wt_path.to_str().unwrap()));
+        assert!(msg.contains(&format!("git worktree remove {}", wt_path.to_str().unwrap())));
+
+        // Clean up the worktree
+        StdCommand::new("git")
+            .args([
+                "-C",
+                root.to_str().unwrap(),
+                "worktree",
+                "remove",
+                "--force",
+                wt_path.to_str().unwrap(),
+            ])
+            .output()
+            .unwrap();
+    }
+
     // ── delete_branch ─────────────────────────────────────────────────────
 
     #[test]
@@ -750,7 +1044,8 @@ mod tests {
     fn test_ensure_gitignored_creates_exclude_file() {
         let (_dir, root) = make_repo();
         ensure_gitignored(&root, ".merges.json").unwrap();
-        let exclude = root.join(".git/info/exclude");
+        let git = git_dir(&root).unwrap();
+        let exclude = git.join("info/exclude");
         assert!(exclude.exists());
         let content = std::fs::read_to_string(&exclude).unwrap();
         assert!(content.contains(".merges.json"));
@@ -761,7 +1056,8 @@ mod tests {
         let (_dir, root) = make_repo();
         ensure_gitignored(&root, ".merges.json").unwrap();
         ensure_gitignored(&root, ".merges.json").unwrap(); // second call should not duplicate
-        let exclude = root.join(".git/info/exclude");
+        let git = git_dir(&root).unwrap();
+        let exclude = git.join("info/exclude");
         let content = std::fs::read_to_string(&exclude).unwrap();
         let count = content.lines().filter(|l| l.trim() == ".merges.json").count();
         assert_eq!(count, 1, "Pattern should appear exactly once, found {}", count);
@@ -770,7 +1066,8 @@ mod tests {
     #[test]
     fn test_ensure_gitignored_appends_to_existing_file() {
         let (_dir, root) = make_repo();
-        let info = root.join(".git/info");
+        let git = git_dir(&root).unwrap();
+        let info = git.join("info");
         std::fs::create_dir_all(&info).unwrap();
         std::fs::write(info.join("exclude"), "# existing rules\n*.log\n").unwrap();
 
@@ -779,6 +1076,25 @@ mod tests {
         let content = std::fs::read_to_string(info.join("exclude")).unwrap();
         assert!(content.contains("*.log"), "Existing rules should be preserved");
         assert!(content.contains(".merges.json"), "New pattern should be appended");
+    }
+
+    #[test]
+    fn test_ensure_gitignored_with_gitdir_file() {
+        let (_dir, root) = make_repo();
+        let git = root.join(".git");
+        let real_git = root.join("real_git");
+        // Move the actual .git directory to a different location to simulate
+        // a worktree-like setup where .git is a file pointing to the real git dir.
+        std::fs::rename(&git, &real_git).unwrap();
+        // Create a gitdir file pointing at the real git dir
+        std::fs::write(&git, format!("gitdir: {}\n", real_git.to_str().unwrap())).unwrap();
+
+        // Ensure our helper still writes into the real git info/exclude
+        ensure_gitignored(&root, ".merges.json").unwrap();
+        let exclude = real_git.join("info/exclude");
+        assert!(exclude.exists(), "exclude should be created inside the real git dir");
+        let content = std::fs::read_to_string(exclude).unwrap();
+        assert!(content.contains(".merges.json"));
     }
 
     // ── merge_base ────────────────────────────────────────────────────────

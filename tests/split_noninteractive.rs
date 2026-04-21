@@ -137,6 +137,12 @@ fn test_apply_plan_chunk_branches_contain_correct_files() {
         "models chunk should only contain model files, got: {:?}",
         files
     );
+
+    // Verify file contents are preserved
+    let user_rs = std::fs::read_to_string(root.join("src/models/user.rs")).unwrap();
+    assert_eq!(user_rs, "struct User;", "File content should be preserved in chunk branch");
+    let post_rs = std::fs::read_to_string(root.join("src/models/post.rs")).unwrap();
+    assert_eq!(post_rs, "struct Post;", "File content should be preserved in chunk branch");
 }
 
 #[test]
@@ -226,4 +232,32 @@ fn test_apply_plan_rejects_duplicate_file_across_chunks() {
     assert!(result.is_err(), "Should reject duplicate file across chunks");
     let msg = result.unwrap_err().to_string();
     assert!(msg.contains("src/models/user.rs"), "Error should name the duplicate file: {}", msg);
+}
+
+#[test]
+fn test_apply_plan_handles_modified_file_from_main() {
+    let (_dir, root) = make_repo_with_changes();
+
+    // Modify a file that originally existed on main (README.md) on the feature branch
+    std::fs::write(root.join("README.md"), "hello modified").unwrap();
+    StdCommand::new("git").args(["add", "README.md"]).current_dir(&root).output().unwrap();
+    StdCommand::new("git").args(["commit", "-m", "modify README"]).current_dir(&root).output().unwrap();
+
+    write_state(&root);
+
+    let plan = vec![merges::split::ChunkPlan {
+        name: "readme".to_string(),
+        files: vec!["README.md".to_string()],
+    }];
+
+    // Should succeed and create a chunk branch containing the modified README
+    merges::split::apply_plan(&root, plan).unwrap();
+
+    let branches = StdCommand::new("git")
+        .args(["branch", "--list"]) 
+        .current_dir(&root)
+        .output()
+        .unwrap();
+    let branch_list = String::from_utf8_lossy(&branches.stdout);
+    assert!(branch_list.contains("feat/big-chunk-1-readme"), "chunk-1-readme branch missing");
 }

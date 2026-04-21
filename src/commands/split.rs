@@ -1,9 +1,9 @@
 use anyhow::{bail, Result};
 use colored::Colorize;
-use dialoguer::{theme::ColorfulTheme, Confirm, Input, MultiSelect};
+use dialoguer::{Confirm, Input};
 use indicatif::{ProgressBar, ProgressStyle};
 
-use crate::{git, split::{auto_group_files, ChunkPlan}, state::MergesState};
+use crate::{git, split::{auto_group_files, ChunkPlan}, state::MergesState, ui};
 
 /// Entry point for `merges split`.
 ///
@@ -130,25 +130,29 @@ fn run_interactive(
             .with_prompt("Chunk name (e.g. models, api, frontend)")
             .interact_text()?;
 
-        let selections = MultiSelect::with_theme(&ColorfulTheme::default())
-            .with_prompt("Select files (Space = toggle, Enter = confirm)")
-            .items(&remaining)
-            .interact()?;
+        let selected_files = ui::select_files("Select files", &remaining)?;
 
-        if selections.is_empty() {
-            let stop = Confirm::new()
-                .with_prompt("No files selected — stop assigning chunks?")
+        if selected_files.is_empty() {
+            let create_empty = Confirm::new()
+                .with_prompt("No files selected — create an empty chunk?")
                 .default(false)
                 .interact()?;
-            if stop {
-                break;
+            if create_empty {
+                new_plans.push(ChunkPlan { name: chunk_name.clone(), files: vec![] });
+            } else {
+                let stop = Confirm::new()
+                    .with_prompt("No files selected — stop assigning chunks?")
+                    .default(false)
+                    .interact()?;
+                if stop {
+                    break;
+                }
+                continue;
             }
-            continue;
+        } else {
+            assigned.extend(selected_files.clone());
+            new_plans.push(ChunkPlan { name: chunk_name, files: selected_files });
         }
-
-        let selected_files: Vec<String> = selections.iter().map(|&i| remaining[i].clone()).collect();
-        assigned.extend(selected_files.clone());
-        new_plans.push(ChunkPlan { name: chunk_name, files: selected_files });
 
         let more = Confirm::new()
             .with_prompt("Add another chunk?")
@@ -164,7 +168,8 @@ fn run_interactive(
         return Ok(());
     }
 
-    // Apply all the interactively-defined chunks
+    // Apply all the interactively-defined chunks using standard behavior
+    // (checking out file contents from the source branch).
     crate::split::apply_plan(root, new_plans)?;
 
     let unassigned: Vec<_> = all_files.iter().filter(|f| !assigned.contains(f)).collect();

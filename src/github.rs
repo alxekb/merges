@@ -17,6 +17,8 @@ pub struct PrInfo {
     pub url: String,
     pub title: String,
     pub state: String,
+    pub is_merged: bool,
+    pub body: String, // Add this field
     pub ci_status: String,
     pub review_state: String,
 }
@@ -48,21 +50,49 @@ pub async fn create_pr(
     Ok((number, url))
 }
 
+/// Find an open pull request for the given head branch.
+pub async fn find_pr_for_branch(
+    client: &Octocrab,
+    owner: &str,
+    repo: &str,
+    head: &str,
+) -> Result<Option<PrInfo>> {
+    let pulls = client
+        .pulls(owner, repo)
+        .list()
+        .head(head)
+        .state(octocrab::params::State::Open)
+        .per_page(1)
+        .send()
+        .await
+        .context("Failed to list PRs for branch")?;
+
+    if let Some(pr) = pulls.items.first() {
+        get_pr_info(client, owner, repo, pr.number).await.map(Some)
+    } else {
+        Ok(None)
+    }
+}
+
 /// Update the base branch of an existing PR (used in stacked mode after lower chunk merges).
-pub async fn update_pr_base(
+pub async fn update_pr(
     client: &Octocrab,
     owner: &str,
     repo: &str,
     pr_number: u64,
     new_base: &str,
+    title: &str,
+    body: &str,
 ) -> Result<()> {
     client
         .pulls(owner, repo)
         .update(pr_number)
         .base(new_base)
+        .title(title)
+        .body(body)
         .send()
         .await
-        .with_context(|| format!("Failed to update base for PR #{}", pr_number))?;
+        .with_context(|| format!("Failed to update PR #{}", pr_number))?;
     Ok(())
 }
 
@@ -90,6 +120,8 @@ pub async fn get_pr_info(
         .unwrap_or_else(|| format!("https://github.com/{}/{}/pull/{}", owner, repo, pr_number));
 
     let title = pr.title.unwrap_or_default();
+    let body = pr.body.unwrap_or_default();
+    let is_merged = pr.merged_at.is_some();
 
     // Fetch combined commit status
     let ci_status = get_ci_status(client, owner, repo, pr_number).await.unwrap_or_else(|_| "unknown".to_string());
@@ -100,6 +132,8 @@ pub async fn get_pr_info(
         url,
         title,
         state,
+        is_merged,
+        body,
         ci_status,
         review_state,
     })

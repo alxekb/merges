@@ -122,16 +122,21 @@ pub fn all_tools() -> Vec<Tool> {
         },
         Tool {
             name: "merges_move".to_string(),
-            description: "Move a file from one chunk to another atomically. \
-                Removes the file from the source chunk branch and adds it to the destination."
+            description: "Move one or more files from one chunk to another atomically. \
+                Removes the files from the source chunk branch and adds them to the destination."
                 .to_string(),
             input_schema: json!({
                 "type": "object",
-                "required": ["file", "from", "to"],
+                "required": ["from", "to"],
                 "properties": {
                     "file": {
                         "type": "string",
-                        "description": "Relative path of the file to move"
+                        "description": "Relative path of a single file to move"
+                    },
+                    "files": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "Relative paths of multiple files to move"
                     },
                     "from": {
                         "type": "string",

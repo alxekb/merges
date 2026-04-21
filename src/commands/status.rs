@@ -41,24 +41,57 @@ pub async fn run() -> Result<()> {
         ]);
 
     for (i, chunk) in state.chunks.iter().enumerate() {
-        let pr_cell = if let Some(num) = chunk.pr_number {
-            format!("#{}", num)
+        let (pr_cell, ci_cell, review_cell) = if let (Some(gh_client), Some(pr_num)) = (&gh, chunk.pr_number) {
+            match github::get_pr_info(gh_client, &state.repo_owner, &state.repo_name, pr_num).await {
+                Ok(info) => {
+                    let mut pr_text = format!("#{}", info.number);
+                    if info.is_merged {
+                        pr_text.push_str(" (merged)");
+                    } else if info.state == "closed" {
+                        pr_text.push_str(" (closed)");
+                    }
+                    (pr_text, info.ci_status, info.review_state)
+                }
+                Err(_) => ("error".to_string(), "error".to_string(), "error".to_string()),
+            }
+        } else {
+            let pr_text = chunk.pr_number.map(|n| format!("#{}", n)).unwrap_or_else(|| "—".to_string());
+            (pr_text, "—".to_string(), "—".to_string())
+        };
+
+        // Check local branch existence
+        let branch_exists = git::branch_exists(&root, &chunk.branch).unwrap_or(false);
+        let branch_cell = if branch_exists {
+            chunk.branch.cyan()
+        } else {
+            format!("{} (deleted)", chunk.branch).red()
+        };
+
+        let behind = if branch_exists {
+            git::commits_behind(&root, &chunk.branch, &state.base_branch).unwrap_or(0)
+        } else {
+            0
+        };
+        let sync_label = if branch_exists {
+            git::sync_status(behind)
         } else {
             "—".to_string()
         };
-
-        let (ci_cell, review_cell) = if let (Some(gh_client), Some(pr_num)) = (&gh, chunk.pr_number) {
-            match github::get_pr_info(gh_client, &state.repo_owner, &state.repo_name, pr_num).await {
-                Ok(info) => (info.ci_status, info.review_state),
-                Err(_) => ("error".to_string(), "error".to_string()),
-            }
+        let sync_color = if !branch_exists {
+            Color::Reset
+        } else if behind == 0 {
+            Color::Green
         } else {
-            ("—".to_string(), "—".to_string())
+            Color::Yellow
         };
 
-        let behind = git::commits_behind(&root, &chunk.branch, &state.base_branch).unwrap_or(0);
-        let sync_label = git::sync_status(behind);
-        let sync_color = if behind == 0 { Color::Green } else { Color::Yellow };
+        let pr_color = if pr_cell.contains("(merged)") {
+            Color::Green
+        } else if pr_cell.contains("(closed)") {
+            Color::Red
+        } else {
+            Color::Reset
+        };
 
         let ci_color = match ci_cell.as_str() {
             "success" => Color::Green,
@@ -76,9 +109,9 @@ pub async fn run() -> Result<()> {
         table.add_row(vec![
             Cell::new(i + 1),
             Cell::new(&chunk.name),
-            Cell::new(&chunk.branch).fg(Color::Cyan),
+            Cell::new(branch_cell),
             Cell::new(&sync_label).fg(sync_color),
-            Cell::new(&pr_cell),
+            Cell::new(&pr_cell).fg(pr_color),
             Cell::new(&ci_cell).fg(ci_color),
             Cell::new(&review_cell).fg(review_color),
             Cell::new(chunk.files.len()),

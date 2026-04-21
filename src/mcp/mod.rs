@@ -143,6 +143,14 @@ async fn handle_request(req: JsonRpcRequest) -> Result<JsonRpcResponse> {
     }
 }
 
+fn root_from_args(args: &Value) -> Result<std::path::PathBuf> {
+    if let Some(cwd) = args.get("__cwd").and_then(|v| v.as_str()) {
+        Ok(std::path::PathBuf::from(cwd))
+    } else {
+        crate::git::repo_root()
+    }
+}
+
 async fn dispatch_tool(name: &str, args: &Value) -> Result<String> {
     match name {
         "merges_init" => {
@@ -153,7 +161,7 @@ async fn dispatch_tool(name: &str, args: &Value) -> Result<String> {
         }
 
         "merges_split" => {
-            let root = git::repo_root()?;
+            let root = root_from_args(args)?;
             let state = MergesState::load(&root)?;
 
             if let Some(plan_val) = args.get("plan") {
@@ -195,7 +203,7 @@ async fn dispatch_tool(name: &str, args: &Value) -> Result<String> {
         }
 
         "merges_status" => {
-            let root = git::repo_root()?;
+            let root = root_from_args(args)?;
             let state = MergesState::load(&root)?;
             Ok(serde_json::to_string_pretty(&json!({
                 "source_branch": state.source_branch,
@@ -218,7 +226,7 @@ async fn dispatch_tool(name: &str, args: &Value) -> Result<String> {
         }
 
         "merges_add" => {
-            let root = git::repo_root()?;
+            let root = root_from_args(args)?;
             let chunk = args["chunk"]
                 .as_str()
                 .ok_or_else(|| anyhow::anyhow!("'chunk' is required"))?
@@ -229,7 +237,7 @@ async fn dispatch_tool(name: &str, args: &Value) -> Result<String> {
                 .iter()
                 .filter_map(|v| v.as_str().map(String::from))
                 .collect();
-            commands::add::run(&root, &chunk, &files)?;
+            commands::add::run(&root, &Some(chunk.clone()), &files)?;
             Ok(serde_json::to_string_pretty(&json!({
                 "status": "ok",
                 "chunk": chunk,
@@ -238,11 +246,18 @@ async fn dispatch_tool(name: &str, args: &Value) -> Result<String> {
         }
 
         "merges_move" => {
-            let root = git::repo_root()?;
-            let file = args["file"]
-                .as_str()
-                .ok_or_else(|| anyhow::anyhow!("'file' is required"))?
-                .to_string();
+            let root = root_from_args(args)?;
+            let files: Vec<String> = if let Some(f) = args.get("file") {
+                vec![f.as_str().ok_or_else(|| anyhow::anyhow!("'file' must be a string"))?.to_string()]
+            } else if let Some(fs) = args.get("files") {
+                fs.as_array()
+                    .ok_or_else(|| anyhow::anyhow!("'files' must be an array"))?
+                    .iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            } else {
+                anyhow::bail!("Either 'file' or 'files' is required");
+            };
             let from = args["from"]
                 .as_str()
                 .ok_or_else(|| anyhow::anyhow!("'from' is required"))?
@@ -251,17 +266,17 @@ async fn dispatch_tool(name: &str, args: &Value) -> Result<String> {
                 .as_str()
                 .ok_or_else(|| anyhow::anyhow!("'to' is required"))?
                 .to_string();
-            commands::r#move::run(&root, &file, &from, &to)?;
+            commands::r#move::run(&root, &files, &Some(from.clone()), &Some(to.clone()))?;
             Ok(serde_json::to_string_pretty(&json!({
                 "status": "ok",
-                "file": file,
+                "files": files,
                 "from": from,
                 "to": to
             }))?)
         }
 
         "merges_clean" => {
-            let root = git::repo_root()?;
+            let root = root_from_args(args)?;
             let state = MergesState::load(&root)?;
             let dry_run = args.get("dry_run").and_then(|v| v.as_bool()).unwrap_or(false);
             let branches: Vec<String> = state.chunks.iter().map(|c| c.branch.clone()).collect();
@@ -282,7 +297,7 @@ async fn dispatch_tool(name: &str, args: &Value) -> Result<String> {
         }
 
         "merges_doctor" => {
-            let root = git::repo_root()?;
+            let root = root_from_args(args)?;
             let repair = args.get("repair").and_then(|v| v.as_bool()).unwrap_or(false);
             let report = doctor::run(&root, repair)?;
             Ok(serde_json::to_string_pretty(&json!({

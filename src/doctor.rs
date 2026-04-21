@@ -47,11 +47,13 @@ pub fn run(root: &Path, repair: bool) -> Result<DoctorReport> {
         }
     }
 
-    // 3. Check .merges.json is in .git/info/exclude
-    let exclude_path = root.join(".git/info/exclude");
+    // 3. Check .merges.json is in info/exclude. Use the common git dir so this
+    // works even when .git in the working tree is a file (worktree case).
+    let git_dir = git::common_git_dir(root)?;
+    let exclude_path = git_dir.join("info/exclude");
     let exclude_content = std::fs::read_to_string(&exclude_path).unwrap_or_default();
     if !exclude_content.contains(".merges.json") {
-        issues.push(".merges.json is not in .git/info/exclude — it may appear as an untracked file.".to_string());
+        issues.push(".merges.json is not in info/exclude — it may appear as an untracked file.".to_string());
         if repair {
             git::ensure_gitignored(root, ".merges.json")?;
             issues.pop(); // resolved
