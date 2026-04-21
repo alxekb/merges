@@ -41,4 +41,3 @@ tempfile = "3"
 [lib]
 name = "merges"
 path = "src/lib.rs"
-clap_complete = "4"

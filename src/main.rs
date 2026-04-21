@@ -148,7 +148,10 @@ async fn main() -> Result<()> {
         Commands::Sync => commands::sync::run()?,
         Commands::Status => commands::status::run().await?,
         Commands::Mcp => mcp::run().await?,
-        Commands::Clean { merged, yes } => commands::clean::run(merged, yes).await?,
+        Commands::Clean { merged, yes } => {
+            let root = git::repo_root()?;
+            commands::clean::run(&root, merged, yes).await?;
+        }
         Commands::Add { chunk, files } => {
             let root = git::repo_root()?;
             commands::add::run(&root, &chunk, &files)?;

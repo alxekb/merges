@@ -288,7 +288,7 @@ async fn dispatch_tool(name: &str, args: &Value) -> Result<String> {
                 }))?)
             } else {
                 let merged = args.get("merged").and_then(|v| v.as_bool()).unwrap_or(false);
-                commands::clean::run(merged, true).await?;
+                commands::clean::run(&root, merged, true).await?;
                 Ok(serde_json::to_string_pretty(&json!({
                     "status": "ok",
                     "deleted": branches

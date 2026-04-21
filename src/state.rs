@@ -20,18 +20,13 @@ impl std::fmt::Display for Strategy {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ChunkStatus {
+    #[default]
     Pending,
     Merged,
     Closed,
-}
-
-impl Default for ChunkStatus {
-    fn default() -> Self {
-        Self::Pending
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

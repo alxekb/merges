@@ -1,4 +1,3 @@
-use merges::git;
 use merges::state::MergesState;
 use std::process::Command as StdCommand;
 use tempfile::TempDir;

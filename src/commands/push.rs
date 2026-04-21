@@ -46,15 +46,15 @@ pub async fn run(stacked: bool, independent: bool) -> Result<()> {
     let mut chunk_statuses = Vec::new();
     for chunk in &state.chunks {
         let mut status = chunk.status.clone();
-        if let Some(pr_number) = chunk.pr_number {
-            if let Ok(info) = github::get_pr_info(&gh, &state.repo_owner, &state.repo_name, pr_number).await {
-                if info.is_merged {
-                    status = crate::state::ChunkStatus::Merged;
-                } else if info.state == "closed" {
-                    status = crate::state::ChunkStatus::Closed;
-                } else {
-                    status = crate::state::ChunkStatus::Pending;
-                }
+        if let Some(pr_number) = chunk.pr_number
+            && let Ok(info) = github::get_pr_info(&gh, &state.repo_owner, &state.repo_name, pr_number).await
+        {
+            if info.is_merged {
+                status = crate::state::ChunkStatus::Merged;
+            } else if info.state == "closed" {
+                status = crate::state::ChunkStatus::Closed;
+            } else {
+                status = crate::state::ChunkStatus::Pending;
             }
         }
         chunk_statuses.push(status);

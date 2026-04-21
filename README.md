@@ -118,7 +118,7 @@ Any PR can merge in any order. Good when chunks are truly independent.
 ## Install
 
 ```bash
-# From source (requires Rust ≥ 1.75)
+# From source (requires Rust ≥ 1.85)
 git clone https://github.com/alxekb/merges
 cd merges
 cargo install --path .
@@ -141,9 +141,14 @@ export GITHUB_TOKEN=ghp_...
 
 ## Commands
 
-### `merges init [--base <branch>]`
+### `merges init [--base <branch>] [--commit-prefix <prefix>]`
 
 Initialises `merges` for the current repo. Detects the current branch and GitHub remote automatically.
+
+| Flag | Description |
+|------|-------------|
+| `--base <branch>` | Base branch PRs will target (default: `main`) |
+| `--commit-prefix <prefix>` | Prefix prepended to every commit message and PR title (e.g. `PROJ-1234`). Auto-detected from the branch name if omitted — e.g. branch `feat/PROJ-1234-payments` yields prefix `PROJ-1234`. |
 
 ```
 $ git checkout feat/payments-v2
@@ -578,7 +583,7 @@ Worktree directories live inside `.git/` so they are never committed, never appe
 
 ## State file — `.merges.json`
 
-Written by `merges init`, excluded from git via `.git/info/exclude`. Commit it if you want to share chunk definitions with teammates.
+Written by `merges init`, excluded from git via `.git/info/exclude` (a per-repo, local-only gitignore that is never committed). This means the file won't appear in `git status` or your diffs by default. To share chunk definitions with teammates, remove the entry from `.git/info/exclude` and commit the file normally.
 
 ```json
 {

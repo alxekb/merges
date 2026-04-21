@@ -1,12 +1,12 @@
 use anyhow::Result;
 use colored::Colorize;
 use dialoguer::Confirm;
+use std::path::Path;
 
 use crate::{config, git, github, state::MergesState};
 
-pub async fn run(merged_only: bool, yes: bool) -> Result<()> {
-    let root = git::repo_root()?;
-    let mut state = MergesState::load(&root)?;
+pub async fn run(root: &Path, merged_only: bool, yes: bool) -> Result<()> {
+    let mut state = MergesState::load(root)?;
 
     if state.chunks.is_empty() {
         println!("No chunks defined.");
@@ -22,7 +22,7 @@ pub async fn run(merged_only: bool, yes: bool) -> Result<()> {
             for chunk in &state.chunks {
                 let Some(pr_num) = chunk.pr_number else { continue };
                 let Ok(info) = github::get_pr_info(&gh, &state.repo_owner, &state.repo_name, pr_num).await else { continue };
-                if info.state == "closed" || info.state == "merged" {
+                if info.is_merged || info.state == "closed" {
                     merged.push(pr_num);
                 }
             }
@@ -81,7 +81,7 @@ pub async fn run(merged_only: bool, yes: bool) -> Result<()> {
         }
     }
 
-    let current = git::current_branch(&root)?;
+    let current = git::current_branch(root)?;
 
     // Delete in reverse order so indices remain valid
     let mut removed_branches = vec![];
@@ -90,14 +90,14 @@ pub async fn run(merged_only: bool, yes: bool) -> Result<()> {
 
         // Switch away if we're on this branch
         if current == *branch {
-            git::checkout(&root, &state.base_branch)?;
+            git::checkout(root, &state.base_branch)?;
         }
 
-        match git::delete_branch(&root, branch) {
+        match git::delete_branch(root, branch) {
             Ok(_) => {
                 // Also remove worktree if worktrees mode is enabled
                 if state.use_worktrees {
-                    let _ = git::remove_worktree(&root, branch);
+                    let _ = git::remove_worktree(root, branch);
                 }
                 println!("{} Deleted local branch '{}'", "✓".green(), branch.cyan());
                 removed_branches.push(branch.clone());
@@ -112,7 +112,7 @@ pub async fn run(merged_only: bool, yes: bool) -> Result<()> {
     state
         .chunks
         .retain(|c| !removed_branches.contains(&c.branch));
-    state.save(&root)?;
+    state.save(root)?;
 
     println!(
         "\n{} Cleaned {} chunk(s). {} chunk(s) remain.",
