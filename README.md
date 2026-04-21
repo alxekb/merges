@@ -1,6 +1,6 @@
 # merges
 
-> Break a large feature branch into small, reviewable PRs — with automatic branch management, GitHub PR creation, and first-class MCP/LLM support.
+> Break a large feature branch into small, reviewable PRs — with automatic branch management, GitHub PR creation, first-class MCP/LLM support, and full coding-agent integration.
 
 [![CI](https://github.com/alxekb/merges/actions/workflows/ci.yml/badge.svg)](https://github.com/alxekb/merges/actions/workflows/ci.yml)
 
@@ -117,11 +117,41 @@ Any PR can merge in any order. Good when chunks are truly independent.
 
 ## Install
 
+### macOS / Linux — one-liner (recommended)
+
 ```bash
-# From source (requires Rust ≥ 1.85)
-git clone https://github.com/alxekb/merges
-cd merges
-cargo install --path .
+curl -fsSL https://raw.githubusercontent.com/alxekb/merges/main/install.sh | sh
+```
+
+Detects your OS and architecture, downloads the right pre-built binary from the [latest GitHub Release](https://github.com/alxekb/merges/releases/latest), and installs it to `/usr/local/bin`.
+
+To install to a different directory:
+```bash
+MERGES_INSTALL_DIR=~/.local/bin curl -fsSL https://raw.githubusercontent.com/alxekb/merges/main/install.sh | sh
+```
+
+### Manual download
+
+Download the binary for your platform from [GitHub Releases](https://github.com/alxekb/merges/releases/latest):
+
+| Platform | File |
+|----------|------|
+| macOS Apple Silicon | `merges-macos-aarch64` |
+| macOS Intel | `merges-macos-x86_64` |
+| Linux x86_64 | `merges-linux-x86_64` |
+| Linux ARM64 | `merges-linux-aarch64` |
+
+Each binary ships with a `.sha256` checksum file. Verify before running:
+```bash
+sha256sum -c merges-linux-x86_64.sha256
+chmod +x merges-linux-x86_64
+sudo mv merges-linux-x86_64 /usr/local/bin/merges
+```
+
+### From source (requires Rust ≥ 1.85)
+
+```bash
+cargo install --git https://github.com/alxekb/merges merges
 ```
 
 ## Authentication
@@ -433,11 +463,11 @@ merges completions fish > ~/.config/fish/completions/merges.fish
 
 ## MCP / LLM Integration
 
-`merges mcp` starts a stdio JSON-RPC 2.0 server. Connect Claude, GitHub Copilot, or any MCP-compatible client — the LLM can then plan and execute the entire split workflow autonomously.
+`merges mcp` starts a stdio JSON-RPC 2.0 server. Connect Claude, GitHub Copilot, Cursor, or any MCP-compatible client — the agent can then plan and execute the entire split workflow autonomously, from inspecting changed files all the way through opening PRs.
 
-### Two-call split workflow
+### How it works: two-call split
 
-The LLM calls `merges_split` without a plan first to see what files exist, then calls it again with a plan once it has decided the grouping:
+The agent calls `merges_split` without a plan first to see what files exist, then calls it again with a plan once it has decided the grouping:
 
 ```
 # Call 1: discover changed files
@@ -479,6 +509,20 @@ The LLM calls `merges_split` without a plan first to see what files exist, then 
 }
 ```
 
+### Cursor
+
+```json
+// .cursor/mcp.json  (or Cursor > Settings > MCP)
+{
+  "mcpServers": {
+    "merges": {
+      "command": "merges",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
 ### Available MCP tools
 
 | Tool | What it does |
@@ -492,6 +536,93 @@ The LLM calls `merges_split` without a plan first to see what files exist, then 
 | `merges_move` | Move a file from one chunk to another atomically |
 | `merges_clean` | Delete chunk branches; `dry_run:true` returns list without deleting |
 | `merges_doctor` | Validate state consistency; `repair:true` auto-fixes issues |
+
+---
+
+## Using merges with a coding agent
+
+When a coding agent (GitHub Copilot, Claude, or any MCP-compatible assistant) produces a large diff, `merges` lets you — or the agent itself — break that diff into a chain of small, reviewable PRs without leaving the conversation.
+
+### Quickstart: agent-driven split
+
+Connect the `merges` MCP server to your agent (see [MCP / LLM Integration](#mcp--llm-integration)), then say something like:
+
+```
+I have a large branch feat/PROJ-123-big-feature.
+Please inspect the changed files, group them into logical
+chunks, push each as a separate PR against main, and give
+me links to each PR.
+```
+
+The agent will execute this in a handful of tool calls:
+
+1. `merges_init` — reads the git remote, writes `.merges.json`
+2. `merges_split {}` — lists all changed files so the agent can plan
+3. `merges_split { "plan": [...] }` — creates the chunk branches
+4. `merges_push { "strategy": "stacked" }` — opens a PR per chunk
+
+No CLI access required on your end.
+
+---
+
+### GitHub Copilot coding agent (cloud)
+
+The Copilot coding agent runs in a sandboxed environment. Pre-install `merges` via `copilot-setup-steps.yml` so every agent session has it available:
+
+```yaml
+# .github/copilot-setup-steps.yml
+steps:
+  - name: Install merges
+    run: cargo install --git https://github.com/alxekb/merges merges
+```
+
+Then add instructions to your issue or Copilot prompt:
+
+```
+After making your changes, split the diff into reviewable
+chunks using merges:
+
+  merges init --commit-prefix <TICKET>
+  merges split --auto
+  merges push --independent
+
+Keep each chunk under ~300 lines changed. Run
+`merges doctor` before and after to verify state is healthy.
+```
+
+The agent writes the code, `merges` breaks it into PRs — you only review.
+
+---
+
+### Example: splitting a large agent-generated branch
+
+Suppose the Copilot coding agent created `feat/PROJ-99-auth-overhaul` touching 35 files. Open a chat with the `merges` MCP server connected and say:
+
+```
+The branch feat/PROJ-99-auth-overhaul is too big to review.
+Split it into these chunks:
+  - "migrations" → all files under db/migrations/
+  - "models"     → all files under src/models/
+  - "api"        → all files under src/api/
+  - "frontend"   → all files under frontend/
+  - "tests"      → all test files
+
+Push as independent PRs targeting main.
+```
+
+The agent resolves this in ~4 MCP tool calls — no manual branching required.
+
+---
+
+### Tips for agent workflows
+
+| Tip | Why it matters |
+|-----|---------------|
+| Use `merges init --worktrees` | Keeps the working tree stable; the agent won't lose file context between tool calls |
+| Pass `--commit-prefix <TICKET>` at init | PR titles and commit messages are uniformly prefixed (e.g. `PROJ-99: add payment models`) |
+| Have the agent call `merges_doctor` first | Catches stale state from a previous session before any branches are created |
+| Use `merges_clean { "dry_run": true }` | Returns the list of branches that would be deleted — let the agent confirm before executing |
+| Prefer `--independent` for unrelated chunks | Allows each PR to merge in any order; use `--stacked` only when chunks depend on each other |
 
 ---
 
